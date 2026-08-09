@@ -205,6 +205,7 @@ ln -s /mnt/c/Users/<your-windows-username>/.kube/config ~/.kube/config
 kctl-tui                    # start the TUI (full navigation mode)
 kctl-tui --version          # print version
 kctl-tui --verbose          # enable debug logging to stderr
+kctl-tui doctor             # check if all tools, config and connections are OK
 kctl-tui config check       # validate ~/.kctl-tui/config.yaml
 kctl-tui panel --context=... --ns=... --team=...   # internal (called by tmux)
 ```

@@ -19,13 +19,16 @@ import (
 )
 
 func runOutput(name string, args ...string) (string, error) {
+	logCmd(name, args...)
 	cmd := exec.Command(name, args...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		msg := fmt.Sprintf("%s %s failed: %v", name, strings.Join(args, " "), err)
+		logErr(name, err)
+		prefix := fmt.Sprintf("%s %s failed: %v", name, strings.Join(args, " "), err)
+		msg := prefix
 		if s := strings.TrimSpace(stderr.String()); s != "" {
 			msg += "\n" + s
 		}
@@ -34,7 +37,9 @@ func runOutput(name string, args ...string) (string, error) {
 		}
 		return "", fmt.Errorf("%s", msg)
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	out := strings.TrimSpace(stdout.String())
+	logOutput(name, out)
+	return out, nil
 }
 
 // kubectlArgs prepends a --context flag when context is non-empty.
@@ -171,4 +176,14 @@ func RunAWSLogin(loginCommand string) *exec.Cmd {
 		parts = []string{"aws", "sso", "login"}
 	}
 	return exec.Command(parts[0], parts[1:]...)
+}
+
+// CheckTool verifies that a named executable is available in PATH.
+// Returns nil if found, or a descriptive error if not.
+func CheckTool(name string) error {
+	_, err := exec.LookPath(name)
+	if err != nil {
+		return fmt.Errorf("%q not found in PATH — please install it first", name)
+	}
+	return nil
 }

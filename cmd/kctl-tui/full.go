@@ -67,6 +67,9 @@ func (m *fullModel) bootstrap() tea.Msg {
 	if len(cfg.Envs) == 0 {
 		return errMsg{fmt.Errorf("no 'envs' configured in ~/.kctl-tui/config.yaml (see config.example.yaml)")}
 	}
+	if err := kubeexec.CheckTool("kubectl"); err != nil {
+		return errMsg{err}
+	}
 	return bootstrapMsg{cfg: cfg, context: cfg.EffectiveDefaultContext()}
 }
 
@@ -254,6 +257,18 @@ func (m *fullModel) loadNamespacesFor(teamValue string) tea.Cmd {
 // configured envs, resolved via the context template, so both are
 // visible side by side.
 func (m *fullModel) startTmuxSession() tea.Cmd {
+	return func() tea.Msg {
+		if err := kubeexec.CheckTool("tmux"); err != nil {
+			return errMsg{err}
+		}
+		if err := kubeexec.CheckTool("k9s"); err != nil {
+			return errMsg{err}
+		}
+		return m.buildAndRunTmux()
+	}
+}
+
+func (m *fullModel) buildAndRunTmux() tea.Msg {
 	selfPath := "kctl-tui" // resolved via PATH; see README for install instructions
 	panelCmd := fmt.Sprintf("%s panel --context=%s --ns=%s --team=%s",
 		selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)

@@ -51,6 +51,7 @@ type panelModel struct {
 	awsValues     map[string]string
 	k8sValues     map[string]string
 	diffEntries   []kctl.SecretDiffEntry
+	diffOffset    int // scroll position for diff table
 
 	message string
 	err      error
@@ -144,6 +145,14 @@ func (m *panelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleEsc()
 		case "enter":
 			return m.handleEnter()
+		case "up", "k":
+			if m.step == stepDiffResult {
+				return m.scrollDiff(-1)
+			}
+		case "down", "j":
+			if m.step == stepDiffResult {
+				return m.scrollDiff(1)
+			}
 		}
 	}
 
@@ -255,6 +264,9 @@ func (m *panelModel) fromActionMenu() (tea.Model, tea.Cmd) {
 // interactively instead of letting the user hit a confusing failure
 // several steps later.
 func (m *panelModel) checkAWSAuthAndProceed() (tea.Model, tea.Cmd) {
+	if err := kubeexec.CheckTool("aws"); err != nil {
+		return m.showError(err)
+	}
 	if err := kubeexec.CheckAWSAuth(); err != nil {
 		m.err = err
 		m.list.SetItems([]list.Item{
@@ -363,7 +375,8 @@ func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
 	}
 	m.k8sValues = k8sValues
 	m.diffEntries = diffSecretValues(m.awsValues, m.k8sValues)
-	m.message = renderDiffTable(m.currentEnv, m.awsSecretName, m.k8sSecretName, m.diffEntries)
+	m.diffOffset = 0
+	m.message = renderDiffTable(m.currentEnv, m.awsSecretName, m.k8sSecretName, m.diffEntries, m.diffOffset, 0)
 
 	if anyMismatch(m.diffEntries) {
 		m.list.SetItems([]list.Item{
@@ -378,16 +391,52 @@ func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func renderDiffTable(env, awsSecretName, k8sSecretName string, entries []kctl.SecretDiffEntry) string {
+func (m *panelModel) scrollDiff(delta int) (tea.Model, tea.Cmd) {
+	newOff := m.diffOffset + delta
+	if newOff < 0 {
+		newOff = 0
+	}
+	maxOff := len(m.diffEntries) - 1
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if newOff > maxOff {
+		newOff = maxOff
+	}
+	m.diffOffset = newOff
+	m.message = renderDiffTable(m.currentEnv, m.awsSecretName, m.k8sSecretName, m.diffEntries, m.diffOffset, 0)
+	return m, nil
+}
+
+func renderDiffTable(env, awsSecretName, k8sSecretName string, entries []kctl.SecretDiffEntry, offset, visibleHeight int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "env: %s   AWS secret: %s   Kubernetes secret: %s\n\n", env, awsSecretName, k8sSecretName)
 	fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", "KEY", "AWS", "KUBERNETES", "STATUS")
-	for _, e := range entries {
+	start := offset
+	if start > len(entries) {
+		start = len(entries)
+	}
+	end := len(entries)
+	if visibleHeight > 0 && start+visibleHeight < end {
+		end = start + visibleHeight
+	}
+	for _, e := range entries[start:end] {
 		status := "OK"
 		if !e.Match {
 			status = "MISMATCH"
 		}
-		fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", e.Key, truncate(e.Left, 20), truncate(e.Right, 20), status)
+		left := e.Left
+		if e.LeftBin {
+			left = fmt.Sprintf("<binary %d bytes>", len(e.Left))
+		}
+		right := e.Right
+		if e.RightBin {
+			right = fmt.Sprintf("<binary %d bytes>", len(e.Right))
+		}
+		fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", e.Key, truncate(left, 20), truncate(right, 20), status)
+	}
+	if len(entries) > 0 {
+		fmt.Fprintf(&b, "\n Showing %d-%d of %d fields  (j/k or arrow keys to scroll)", start+1, end, len(entries))
 	}
 	return b.String()
 }
@@ -415,7 +464,15 @@ func (m *panelModel) fromForceSyncConfirm() (tea.Model, tea.Cmd) {
 }
 
 func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
-	name := m.input.Value()
+	name := strings.TrimSpace(m.input.Value())
+	if name == "" {
+		return m.showError(fmt.Errorf("ExternalSecret name must not be empty"))
+	}
+	for _, r := range name {
+		if r < 0x20 || r > 0x7e || r == '/' || r == ' ' {
+			return m.showError(fmt.Errorf("ExternalSecret name contains invalid character: %q", r))
+		}
+	}
 	ts := time.Now().Unix()
 	_, err := kubeexec.AnnotateForceSync(m.resolvedContext(), m.ns, name, ts)
 	if err != nil {

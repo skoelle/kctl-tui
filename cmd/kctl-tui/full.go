@@ -278,17 +278,18 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
 
 	args := []string{
+		"kill-session", "-t", "kctl", ";", // ignore error if no session exists
 		"new-session", "-d", "-s", "kctl",
-		panelCmd, ";",
+		"--", panelCmd, ";",
 		"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
-		"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
+		"split-window", "-v", "-t", "kctl:0.0", "--", k9sCmdA, ";",
 	}
 	if len(m.cfg.Envs) > 1 {
 		envB := m.cfg.Envs[1]
 		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
 		k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
 		args = append(args,
-			"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+			"split-window", "-v", "-t", "kctl:0.1", "--", k9sCmdB, ";",
 		)
 	}
 	args = append(args,

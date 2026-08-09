@@ -43,7 +43,9 @@ release_json="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest"
   exit 1
 }
 
-if echo "$release_json" | grep -q '"message":[[:space:]]*"Not Found"'; then
+echo "Received ${#release_json} bytes from the GitHub API."
+
+if echo "$release_json" | grep -q '"message"[[:space:]]*:[[:space:]]*"Not Found"'; then
   echo "" >&2
   echo "Could not find a published release for ${REPO}." >&2
   echo "This usually means no release has been tagged yet." >&2
@@ -59,19 +61,25 @@ if echo "$release_json" | grep -q '"message":[[:space:]]*"Not Found"'; then
   exit 1
 fi
 
-if echo "$release_json" | grep -qi 'API rate limit exceeded'; then
+if echo "$release_json" | grep -qi 'rate limit exceeded'; then
   echo "GitHub API rate limit exceeded. Wait a bit and try again, or authenticate with a GitHub token." >&2
   exit 1
 fi
 
-latest_tag="$(echo "$release_json" | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+# Note: '|| true' below prevents 'set -o pipefail' + 'set -e' from aborting the
+# script silently if grep finds no match; the emptiness check right after
+# gives a proper diagnostic instead.
+latest_tag="$(echo "$release_json" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')" || true
 
 if [ -z "$latest_tag" ]; then
   echo "Could not parse the latest release tag from the GitHub API response." >&2
   echo "Raw response (truncated):" >&2
-  echo "$release_json" | head -c 500 >&2
+  echo "$release_json" | head -c 800 >&2
+  echo "" >&2
   exit 1
 fi
+
+echo "Latest release tag: ${latest_tag}"
 
 asset="kctl-tui-${os}-${arch}"
 url="https://github.com/${REPO}/releases/download/${latest_tag}/${asset}"

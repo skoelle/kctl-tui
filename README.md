@@ -1,27 +1,35 @@
 # kctl-tui
 
-A small terminal entry point for everyday Kubernetes work: pick a context,
-a team, and a namespace once, then drive status (via k9s), rollout
-restarts, and an AWS Secrets Manager <-> Kubernetes Secret diff/force-sync
-workflow from one place instead of retyping long `kubectl` commands.
+A small terminal entry point for everyday Kubernetes work: pick a context
+and a namespace once, then drive rollout restarts and an AWS Secrets
+Manager <-> Kubernetes Secret diff/force-sync per environment from one
+place instead of retyping long `kubectl` commands.
 
 ## Why
 
 Working with several clusters, many namespaces per team, and paired
-environments (e.g. staging/production) quickly turns into a lot of repeated
-typing with plain `kubectl`/`k9s`. kctl-tui adds:
+environments (e.g. beta/prod) quickly turns into a lot of repeated typing
+with plain `kubectl`/`k9s`. kctl-tui adds:
 
-- A guided **context -> team -> namespace** selection with sensible
-  defaults (the currently active context/namespace is pre-selected).
+- A guided **context -> team -> namespace** selection that starts
+  directly at team selection (using a configured default context), with
+  the context screen just one `Esc` away.
 - Namespace grouping by an arbitrary, configurable **label** instead of
   scrolling through every namespace in the cluster.
 - A **3-pane view** (via `tmux`): one control pane for actions, two status
-  panes running `k9s` for the current namespace across two related
-  contexts.
-- A guided **rollout restart** that lists deployments instead of requiring
-  you to know/type the exact deployment name.
-- A guided **AWS Secrets Manager vs. Kubernetes Secret** comparison,
-  including an optional ExternalSecret force-sync annotation.
+  panes running `k9s` for the current namespace across your two
+  configured environments (e.g. beta/prod), shown side by side.
+- A control-pane menu organized **by environment**: pick beta or prod,
+  then Secrets sync or Redeploy for that environment specifically.
+- AWS Secrets Manager secret IDs and Kubernetes context names/ARNs are
+  **computed from configurable templates** (namespace + environment),
+  instead of listing secrets or discovering contexts live from
+  `kubectl`/`aws-cli`.
+- A guided **AWS Secrets Manager vs. Kubernetes Secret** comparison of
+  every field at once, with a force-sync request for the whole secret if
+  anything differs.
+- An **AWS auth check** before the secrets workflow, offering to run your
+  configured SSO login command interactively if the session has expired.
 
 See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
 [PLAN.md](PLAN.md) for the implementation roadmap and current status.
@@ -31,38 +39,41 @@ See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
 ```
 +--------------------------------------------------+
 |  Control pane: kctl-tui panel                    |
-|  -> Redeploy, Secrets diff/force-sync             |
+|  -> 1) Quit  2) beta  3) prod                     |
+|     each with: a) Secrets sync  b) Redeploy       |
 +--------------------------------------------------+
-|  k9s --context <context-a> -n <namespace>         |
+|  k9s --context <resolved beta context>  -n <ns>   |
 +--------------------------------------------------+
-|  k9s --context <context-b> -n <namespace>         |
+|  k9s --context <resolved prod context>  -n <ns>   |
 +--------------------------------------------------+
 ```
 
-1. Run `kctl-tui`. It walks you through context, team, and namespace
-   selection.
-2. Once a namespace is confirmed, it opens a `tmux` session with the layout
-   above and attaches to it.
-3. Inside the control pane you can trigger a rollout restart or compare/
-   force-sync a secret. The two status panes keep showing live pod state
-   via `k9s`, so there is no separate "status" menu entry.
-4. Pressing `Esc` in the control pane closes the whole `tmux` session
-   (including both `k9s` panes) and returns you to the namespace
-   selection.
-5. Pressing `Tab` in the control pane switches both status panes to the
-   paired context configured in `context_pairs` (see Configuration),
-   keeping the same namespace.
+1. Run `kctl-tui`. It loads your config, applies the default context, and
+   jumps straight to team selection; press `Esc` there to pick a
+   different context first.
+2. Pick a team (namespace label filter), then a namespace.
+3. It opens a `tmux` session with the layout above: the control pane runs
+   this binary in "panel" mode, the two status panes run `k9s` against
+   your first two configured environments (e.g. beta and prod), resolved
+   from `context_template`.
+4. In the control pane, pick an environment, then Secrets sync or
+   Redeploy for that environment. `Esc` goes back one level (action menu
+   -> environment menu -> closes the whole tmux session, including both
+   `k9s` panes, and returns you to namespace selection).
 
 ## Requirements
 
-- `kubectl`, configured with access to your cluster(s).
+- `kubectl`, configured with access to your cluster(s) (the actual
+  context names/ARNs are resolved from your `context_template`, see
+  Configuration below - they must already exist in your kubeconfig, e.g.
+  added via `aws eks update-kubeconfig`).
 - `k9s` (used for the two status panes).
 - `tmux` (used for the 3-pane layout). On Windows, this means running
   kctl-tui inside **WSL** — `tmux` has no native Windows port. Native
   Windows Terminal has its own split-pane feature, but it cannot be
   scripted from inside a pane the way `tmux` can, so the automated 3-pane
-  layout and the `Tab`/`Esc` session handling described above are only
-  fully supported under Linux/WSL. See SPEC.md section 3.6 for details.
+  layout and the `Esc` session handling described above are only fully
+  supported under Linux/WSL. See SPEC.md section 3.6 for details.
 - `aws` CLI, configured with credentials, only needed for the secrets
   workflow.
 
@@ -98,29 +109,58 @@ matching asset from the [Releases page](https://github.com/skoelle/kctl-tui/rele
 ## Configuration
 
 Copy [config.example.yaml](config.example.yaml) to `~/.kctl-tui/config.yaml`
-and adjust it to your own cluster setup:
+and adjust it to your own setup:
 
 ```yaml
-context_pairs:
-  - name: "example-environment-pair"
-    contexts:
-      - "example-context-a"
-      - "example-context-b"
+contexts:
+  - "internal"
+  - "external"
+default_context: "internal"
+
+envs:
+  - "beta"
+  - "prod"
+
+aws_region: "eu-central-1"
+aws_account_id: "123456789012"
+
+secret_name_template: "tf-{namespace}-{env}-secrets"
+context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
 
 team_label_key: "example.org/team"
+aws_sso_login_command: "aws sso login"
 ```
 
-- `context_pairs`: groups of related `kubectl` contexts. `Tab` in the
-  control pane cycles through the contexts of whichever group the current
-  context belongs to.
+- `contexts` / `default_context`: the top-level grouping the tool starts
+  from (e.g. a network boundary such as internal/external-facing
+  clusters). This is the outermost navigation level, one `Esc` above team
+  selection.
+- `envs`: the environments switchable from the control panel (e.g.
+  "beta"/"prod"). The **first two** entries are also used for the two k9s
+  status panes shown side by side.
+- `aws_region` / `aws_account_id`: used for AWS Secrets Manager calls and
+  to fill the `{account_id}` placeholder in `context_template`.
+  `123456789012` is a placeholder, not a real account.
+- `secret_name_template`: builds the AWS Secrets Manager secret ID from
+  the chosen namespace and environment. Placeholders: `{namespace}`,
+  `{env}`.
+- `context_template`: builds the actual kubectl context name/ARN from
+  region, account ID, environment, and context. Placeholders: `{region}`,
+  `{account_id}`, `{env}`, `{context}`. Adjust the literal parts (`tf-`,
+  `-1`, cluster naming, ARN shape) to match how your own clusters/contexts
+  are actually named — the resolved value must match an existing context
+  in your kubeconfig.
 - `team_label_key`: the Kubernetes namespace label used to group
   namespaces by team/ownership in the team-selection screen. This is
   entirely up to your organization's labeling convention; kctl-tui ships
   with no default team label of its own.
+- `aws_sso_login_command`: run interactively if `aws sts
+  get-caller-identity` fails before the secrets workflow (e.g. an expired
+  SSO session). Defaults to `aws sso login`.
 
 `~/.kctl-tui/config.yaml` is not part of this repository and should stay
-that way — it typically contains your organization's internal context and
-label names.
+that way — it typically contains your organization's internal account ID,
+context naming, and label names.
 
 ## WSL setup notes
 
@@ -141,11 +181,11 @@ go vet ./...
 go build ./cmd/kctl-tui
 ```
 
-Pure logic (context-pair matching, label filtering, config parsing) lives
-in `internal/kctl` and `internal/config` and is covered by unit tests. Code
-that shells out to `kubectl`/`aws`/`tmux` lives in `internal/kubeexec` and
-in `cmd/kctl-tui` and is intentionally kept thin and untested, since it has
-no meaningful behavior without a live cluster.
+Pure logic (template resolution, label filtering, config parsing, secret
+diffing) lives in `internal/kctl` and `internal/config` and is covered by
+unit tests. Code that shells out to `kubectl`/`aws`/`tmux` lives in
+`internal/kubeexec` and in `cmd/kctl-tui` and is intentionally kept thin
+and untested, since it has no meaningful behavior without a live cluster.
 
 ## License
 

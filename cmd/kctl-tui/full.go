@@ -281,7 +281,10 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
 
 	// Kill stale session first (ignore error if none exists).
-	exec.Command("tmux", "kill-session", "-t", "kctl").Run()
+	killErr := exec.Command("tmux", "kill-session", "-t", "kctl").Run()
+	fmt.Fprintf(os.Stderr, "[debug] selfPath=%s\n", selfPath)
+	fmt.Fprintf(os.Stderr, "[debug] panelCmd=%s\n", panelCmd)
+	fmt.Fprintf(os.Stderr, "[debug] kill-session err=%v\n", killErr)
 
 	args := []string{
 		"new-session", "-d", "-s", "kctl",
@@ -303,6 +306,7 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 		"attach", "-t", "kctl",
 	)
 
+	fmt.Fprintf(os.Stderr, "[debug] tmux args: %v\n", args)
 	c := exec.Command("tmux", args...)
 
 	return tea.ExecProcess(c, func(err error) tea.Msg {

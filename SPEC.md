@@ -167,18 +167,15 @@ The `context_template` replaces `{region}`, `{account_id}`, `{env}`, and
 selected environment/context. The resolved value must match an existing
 context in your kubeconfig (e.g. added via `aws eks update-kubeconfig`).
 
-**Platform limitation on Windows without WSL:** `kill-session` is
-tmux-specific. Windows Terminal (`wt.exe`) offers no equivalent scripting
-to end the session from inside a pane. On plain Windows (without WSL),
-only a simplified flow is possible: k9s panes are closed manually (`q`,
-then `Ctrl+Shift+W`); automatic session termination is unavailable there.
-This limitation is the main reason the primary target system is set to
-Linux/WSL.
+**Windows support:** On native Windows, install
+[psmux](https://github.com/marlocarlo/psmux) — a native, tmux-compatible
+terminal multiplexer. psmux provides a `tmux` command, so kctl-tui works
+without code changes (including `Esc`-triggered session termination).
+Alternatively, run kctl-tui inside WSL with standard `tmux`.
 
 ## 4. Non-functional requirements
 
-- **Primary platform Linux/WSL**, secondary native Windows with reduced
-  functionality.
+- **Primary platform Linux/WSL**, secondary native Windows (via psmux).
 - **Single-binary distribution** without external runtime dependency (Go
   provides this natively).
 - **External dependencies**: `kubectl` mandatory; `tmux`, `k9s`, `aws-cli`

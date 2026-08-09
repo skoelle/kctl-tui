@@ -182,8 +182,11 @@ func RunAWSLogin(loginCommand string) *exec.Cmd {
 // Returns nil if found, or a descriptive error if not.
 func CheckTool(name string) error {
 	_, err := exec.LookPath(name)
-	if err != nil {
-		return fmt.Errorf("%q not found in PATH — please install it first", name)
+	if err == nil {
+		return nil
 	}
-	return nil
+	if name == "tmux" {
+		return fmt.Errorf("%q not found in PATH — install tmux (Linux/macOS) or psmux (Windows: scoop install psmux or cargo install psmux)", name)
+	}
+	return fmt.Errorf("%q not found in PATH — please install it first", name)
 }

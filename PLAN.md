@@ -66,13 +66,14 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 - [ ] Paginate/scroll the secrets diff table for secrets with many fields
       instead of relying on terminal wrapping.
 
-## Phase 3 — Windows-native support (open, secondary priority)
+## Phase 3 — Windows-native support (done)
 
-- [ ] Detect OS at runtime; on native Windows (no WSL), fall back to
-      `wt.exe split-pane` instead of `tmux` for the status panes.
-- [ ] Document/implement that `Esc`-triggered session close is **not**
-      available in the native Windows fallback — the panes must be closed
-      manually there.
+- [x] Windows support via [psmux](https://github.com/marlocarlo/psmux) —
+      a native, tmux-compatible terminal multiplexer. kctl-tui works
+      without code changes; `CheckTool("tmux")` error message includes
+      Windows-specific install hint.
+- [x] `install.ps1` — PowerShell install script for Windows.
+- [x] Updated README and SPEC with Windows + psmux setup instructions.
 
 ## Phase 4 — Nice-to-haves (open, not committed)
 

@@ -68,12 +68,16 @@ See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
   Configuration below - they must already exist in your kubeconfig, e.g.
   added via `aws eks update-kubeconfig`).
 - `k9s` (used for the two status panes).
-- `tmux` (used for the 3-pane layout). On Windows, this means running
-  kctl-tui inside **WSL** — `tmux` has no native Windows port. Native
-  Windows Terminal has its own split-pane feature, but it cannot be
-  scripted from inside a pane the way `tmux` can, so the automated 3-pane
-  layout and the `Esc` session handling described above are only fully
-  supported under Linux/WSL. See SPEC.md section 3.6 for details.
+- `tmux` (used for the 3-pane layout). On **Linux/macOS**, install
+  `tmux` via your package manager. On **Windows**, install
+  [psmux](https://github.com/marlocarlo/psmux) — a native,
+  tmux-compatible terminal multiplexer:
+  ```powershell
+  scoop install psmux
+  # or
+  cargo install psmux
+  ```
+  psmux provides a `tmux` command, so kctl-tui works without changes.
 - `aws` CLI, configured with credentials, only needed for the secrets
   workflow.
 
@@ -84,6 +88,15 @@ See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
 ```bash
 curl -fsSL https://raw.githubusercontent.com/skoelle/kctl-tui/main/install.sh | bash
 ```
+
+### Quick install (Windows)
+
+```powershell
+irm https://raw.githubusercontent.com/skoelle/kctl-tui/main/install.ps1 | iex
+```
+
+This downloads the latest release binary for your architecture from
+GitHub Releases and installs it to your PATH.
 
 This downloads the latest release binary for your OS/architecture from
 GitHub Releases and installs it to `/usr/local/bin/kctl-tui`.
@@ -167,11 +180,19 @@ aws_sso_login_command: "aws sso login"
 that way — it typically contains your organization's internal account ID,
 context naming, and label names.
 
-## WSL setup notes
+## Windows notes
 
-If `kubectx`/`kubens` or `kctl-tui` report a missing kubeconfig inside WSL,
-your kubeconfig most likely only exists on the Windows side. Symlink it
-into WSL:
+On native Windows (without WSL), install [psmux](https://github.com/marlocarlo/psmux)
+for the 3-pane layout. psmux is a native Windows terminal multiplexer
+that is tmux-compatible — kctl-tui works without code changes:
+
+```powershell
+scoop install psmux
+# or
+cargo install psmux
+```
+
+If you prefer WSL, symlink your kubeconfig into WSL:
 
 ```bash
 mkdir -p ~/.kube

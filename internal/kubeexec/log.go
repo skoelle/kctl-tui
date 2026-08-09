@@ -29,6 +29,16 @@ func SetVerbose(enabled bool, w io.Writer) {
 	}
 }
 
+// VerboseLog writes a message to the verbose log if enabled.
+func VerboseLog(format string, args ...interface{}) {
+	mu.Lock()
+	defer mu.Unlock()
+	if !verbose {
+		return
+	}
+	fmt.Fprintf(logOut, format, args...)
+}
+
 func logCmd(name string, args ...string) {
 	mu.Lock()
 	defer mu.Unlock()

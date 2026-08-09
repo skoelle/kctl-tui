@@ -280,8 +280,9 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
 	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
 
-	fmt.Fprintf(os.Stderr, "[debug] selfPath=%s\n", selfPath)
-	fmt.Fprintf(os.Stderr, "[debug] panelCmd=%s\n", panelCmd)
+	kubeexec.VerboseLog("[debug] selfPath=%s\n", selfPath)
+	kubeexec.VerboseLog("[debug] panelCmd=%s\n", panelCmd)
+	kubeexec.VerboseLog("[debug] k9sCmdA=%s\n", k9sCmdA)
 
 	// Kill stale session first (ignore error if none exists).
 	exec.Command("tmux", "kill-session", "-t", "kctl").Run()
@@ -297,6 +298,7 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 		envB := m.cfg.Envs[1]
 		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
 		k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+		kubeexec.VerboseLog("[debug] k9sCmdB=%s\n", k9sCmdB)
 		setup = append(setup, []string{"split-window", "-v", "-t", "kctl:0.1", k9sCmdB})
 	}
 	setup = append(setup,
@@ -306,13 +308,12 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 
 	for _, args := range setup {
 		if out, err := exec.Command("tmux", args...).CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "[debug] tmux %s failed: %v\n%s\n", args[0], err, out)
+			kubeexec.VerboseLog("[debug] tmux %s failed: %v\n%s\n", args[0], err, out)
 			return func() tea.Msg { return tmuxDoneMsg{err: fmt.Errorf("tmux %s: %w", args[0], err)} }
 		}
 	}
 
 	// Only attach uses tea.ExecProcess so it takes over the terminal.
-	fmt.Fprintf(os.Stderr, "[debug] tmux attach -t kctl\n")
 	c := exec.Command("tmux", "attach", "-t", "kctl")
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return tmuxDoneMsg{err: err}

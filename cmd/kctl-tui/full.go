@@ -230,6 +230,11 @@ func (m *fullModel) loadNamespacesFor(teamValue string) tea.Cmd {
 // startTmuxSession builds the 3-pane tmux command (control pane running
 // this binary in "panel" mode, plus two k9s status panes) and runs it via
 // tea.ExecProcess so the Bubble Tea UI cleanly hands over the terminal.
+//
+// Layout: even-vertical stacks all three panes evenly from top to bottom
+// (control pane, then the two k9s status panes). remain-on-exit keeps a
+// pane visible (showing its exit status/output) instead of tmux silently
+// closing it if the control pane's process crashes on startup.
 func (m *fullModel) startTmuxSession() tea.Cmd {
 	selfPath := "kctl-tui" // resolved via PATH; see README for install instructions
 	panelCmd := fmt.Sprintf("%s panel --ctx=%s --ns=%s --team=%s",
@@ -244,9 +249,11 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 
 	c := exec.Command("tmux", "new-session", "-d", "-s", "kctl",
 		panelCmd, ";",
-		"split-window", "-v", k9sCmdA, ";",
-		"split-window", "-v", k9sCmdB, ";",
-		"select-layout", "main-horizontal", ";",
+		"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
+		"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
+		"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+		"select-layout", "-t", "kctl", "even-vertical", ";",
+		"select-pane", "-t", "kctl:0.0", ";",
 		"attach", "-t", "kctl",
 	)
 

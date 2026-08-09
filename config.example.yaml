@@ -1,0 +1,19 @@
+# Example configuration for kctl-tui.
+# Copy this file to ~/.kctl-tui/config.yaml and adjust the values to your
+# own cluster setup. Do NOT commit your real config.yaml with company- or
+# project-specific context/namespace/label names to a public repository.
+
+# Groups of kubectl contexts that belong together (e.g. the same
+# environment pair, such as staging/production of the same cluster).
+# Pressing TAB in the control pane cycles through the contexts listed here
+# while keeping the current namespace.
+context_pairs:
+  - name: "example-environment-pair"
+    contexts:
+      - "example-context-a"
+      - "example-context-b"
+
+# The namespace label key used to group namespaces by team/ownership in the
+# team-selection screen. Adjust this to whatever label your organization
+# actually uses (can contain a domain prefix, e.g. "example.org/team").
+team_label_key: "example.org/team"

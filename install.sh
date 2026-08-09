@@ -38,11 +38,14 @@ esac
 
 echo "Detecting latest release for $REPO ..."
 
-http_status="$(curl -sSL -o /tmp/kctl-tui-release.json -w '%{http_code}' "https://api.github.com/repos/${REPO}/releases/latest")"
+release_json="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest")" || {
+  echo "Failed to reach the GitHub API (network error). Check your internet connection and try again." >&2
+  exit 1
+}
 
-if [ "$http_status" != "200" ]; then
+if echo "$release_json" | grep -q '"message":[[:space:]]*"Not Found"'; then
   echo "" >&2
-  echo "Could not find a published release for ${REPO} (HTTP ${http_status})." >&2
+  echo "Could not find a published release for ${REPO}." >&2
   echo "This usually means no release has been tagged yet." >&2
   echo "" >&2
   echo "Options:" >&2
@@ -53,15 +56,20 @@ if [ "$http_status" != "200" ]; then
   echo "       cd $(basename "$REPO")" >&2
   echo "       go build -o ${BIN_NAME} ./cmd/${BIN_NAME}" >&2
   echo "       sudo mv ${BIN_NAME} ${INSTALL_DIR}/" >&2
-  rm -f /tmp/kctl-tui-release.json
   exit 1
 fi
 
-latest_tag="$(grep -m1 '"tag_name"' /tmp/kctl-tui-release.json | sed -E 's/.*"([^"]+)".*/\1/')"
-rm -f /tmp/kctl-tui-release.json
+if echo "$release_json" | grep -qi 'API rate limit exceeded'; then
+  echo "GitHub API rate limit exceeded. Wait a bit and try again, or authenticate with a GitHub token." >&2
+  exit 1
+fi
+
+latest_tag="$(echo "$release_json" | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
 
 if [ -z "$latest_tag" ]; then
   echo "Could not parse the latest release tag from the GitHub API response." >&2
+  echo "Raw response (truncated):" >&2
+  echo "$release_json" | head -c 500 >&2
   exit 1
 fi
 

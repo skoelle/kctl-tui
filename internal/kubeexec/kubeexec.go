@@ -121,6 +121,30 @@ func GetSecretValueBase64(namespace, secretName, field string) (string, error) {
 	return runOutput("kubectl", "-n", namespace, "get", "secret", secretName, "-o", path)
 }
 
+// GetSecretAllFields returns all fields of a Kubernetes secret, already
+// base64-decoded into plain values.
+func GetSecretAllFields(namespace, secretName string) (map[string]string, error) {
+	out, err := runOutput("kubectl", "-n", namespace, "get", "secret", secretName, "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	var parsed struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(parsed.Data))
+	for k, v := range parsed.Data {
+		decoded, err := DecodeBase64(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode field %q: %w", k, err)
+		}
+		result[k] = decoded
+	}
+	return result, nil
+}
+
 // DecodeBase64 decodes a base64-encoded Kubernetes secret value.
 func DecodeBase64(value string) (string, error) {
 	decoded, err := base64.StdEncoding.DecodeString(value)
@@ -136,6 +160,21 @@ func AnnotateForceSync(namespace, externalSecretName string, unixTimestamp int64
 	annotation := fmt.Sprintf("force-sync=%d", unixTimestamp)
 	return runOutput("kubectl", "-n", namespace, "annotate", "externalsecret",
 		externalSecretName, annotation, "--overwrite")
+}
+
+// ListAWSSecrets returns all AWS Secrets Manager secret names/IDs visible
+// in the given region (subject to the caller's IAM permissions).
+func ListAWSSecrets(region string) ([]string, error) {
+	out, err := runOutput("aws", "secretsmanager", "list-secrets",
+		"--region", region, "--query", "SecretList[].Name", "--output", "json")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(out), &names); err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 // GetAWSSecretString fetches the SecretString of an AWS Secrets Manager

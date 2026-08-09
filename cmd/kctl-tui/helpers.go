@@ -13,3 +13,11 @@ func namespacesForLabelValue(namespaces map[string]map[string]string, labelKey, 
 func findNextContext(current string, pairs []kctl.ContextPair) (string, bool) {
 	return kctl.FindNextContext(current, pairs)
 }
+
+func diffSecretValues(left, right map[string]string) []kctl.SecretDiffEntry {
+	return kctl.DiffSecretValues(left, right)
+}
+
+func anyMismatch(entries []kctl.SecretDiffEntry) bool {
+	return kctl.AnyMismatch(entries)
+}

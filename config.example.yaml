@@ -1,21 +1,49 @@
 # Example configuration for kctl-tui.
 # Copy this file to ~/.kctl-tui/config.yaml and adjust the values to your
-# own cluster setup. Do NOT commit your real config.yaml with company- or
-# project-specific context/namespace/label names to a public repository.
+# own AWS/Kubernetes setup. Do NOT commit your real config.yaml with
+# company- or project-specific account IDs, contexts, or label names to a
+# public repository.
 
-# Groups of kubectl contexts that belong together (e.g. the same
-# environment pair, such as staging/production of the same cluster).
-# Pressing TAB in the control pane cycles through the contexts listed here
-# while keeping the current namespace.
-context_pairs:
-  - name: "example-environment-pair"
-    contexts:
-      - "example-context-a"
-      - "example-context-b"
+# Top-level grouping the tool starts from (e.g. network boundary such as
+# internal/external-facing clusters). This is the outermost navigation
+# level; press Esc from the team-selection screen to get here.
+contexts:
+  - "internal"
+  - "external"
 
-# The namespace label key used to group namespaces by team/ownership in the
-# team-selection screen. Adjust this to whatever label your organization
-# actually uses (can contain a domain prefix, e.g. "example.org/team").
+# Pre-selected on startup so the tool can jump straight to team selection
+# instead of asking for the context every time. Falls back to the first
+# entry of 'contexts' if omitted.
+default_context: "internal"
+
+# Environments switchable from the control panel (e.g. "1) beta" /
+# "2) prod"). The first two entries are also used for the two k9s status
+# panes shown side by side.
+envs:
+  - "beta"
+  - "prod"
+
+# AWS region used for all AWS Secrets Manager calls.
+aws_region: "eu-central-1"
+
+# AWS account ID, used to fill the {account_id} placeholder below.
+# 123456789012 is a placeholder, not a real account.
+aws_account_id: "123456789012"
+
+# Builds the AWS Secrets Manager secret ID from the chosen namespace and
+# environment. Available placeholders: {namespace}, {env}.
+secret_name_template: "tf-{namespace}-{env}-secrets"
+
+# Builds the actual kubectl context name/ARN from region, account ID, env,
+# and context. Available placeholders: {region}, {account_id}, {env},
+# {context}. Adjust the literal parts ("tf-", "-1", cluster naming, ARN
+# shape) to match how your own EKS clusters/contexts are actually named.
+context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
+
+# The namespace label key used to group namespaces by team/ownership in
+# the team-selection screen. Adjust this to whatever label your
+# organization actually uses (can contain a domain prefix, e.g.
+# "example.org/team").
 team_label_key: "example.org/team"
 
 # Command used to (re-)authenticate with AWS before the Secrets workflow,

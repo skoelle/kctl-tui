@@ -11,19 +11,24 @@ func TestLoad_MissingFileReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(cfg.ContextPairs) != 0 {
-		t.Fatalf("expected no context pairs, got %v", cfg.ContextPairs)
-	}
-	if cfg.TeamLabelKey != "" {
-		t.Fatalf("expected empty team label key, got %q", cfg.TeamLabelKey)
+	if len(cfg.Contexts) != 0 || len(cfg.Envs) != 0 {
+		t.Fatalf("expected no contexts/envs, got %+v", cfg)
 	}
 }
 
 func TestLoad_ValidFile(t *testing.T) {
 	content := []byte(`
-context_pairs:
-  - name: "env-pair-1"
-    contexts: ["ctx-a", "ctx-b"]
+contexts:
+  - "internal"
+  - "external"
+default_context: "internal"
+envs:
+  - "beta"
+  - "prod"
+aws_region: "eu-central-1"
+aws_account_id: "123456789012"
+secret_name_template: "tf-{namespace}-{env}-secrets"
+context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
 team_label_key: "example.org/team"
 `)
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -38,7 +43,58 @@ team_label_key: "example.org/team"
 	if cfg.TeamLabelKey != "example.org/team" {
 		t.Fatalf("unexpected team label key: %q", cfg.TeamLabelKey)
 	}
-	if len(cfg.ContextPairs) != 1 || cfg.ContextPairs[0].Name != "env-pair-1" {
-		t.Fatalf("unexpected context pairs: %v", cfg.ContextPairs)
+	if len(cfg.Contexts) != 2 || len(cfg.Envs) != 2 {
+		t.Fatalf("unexpected contexts/envs: %+v", cfg)
+	}
+}
+
+func TestEffectiveDefaultContext(t *testing.T) {
+	cfg := Config{Contexts: []string{"internal", "external"}}
+	if got := cfg.EffectiveDefaultContext(); got != "internal" {
+		t.Fatalf("expected first context as fallback default, got %q", got)
+	}
+
+	cfg.DefaultContext = "external"
+	if got := cfg.EffectiveDefaultContext(); got != "external" {
+		t.Fatalf("expected explicit default_context to win, got %q", got)
+	}
+
+	empty := Config{}
+	if got := empty.EffectiveDefaultContext(); got != "" {
+		t.Fatalf("expected empty string when no contexts configured, got %q", got)
+	}
+}
+
+func TestResolveContext(t *testing.T) {
+	cfg := Config{
+		AWSRegion:       "eu-central-1",
+		AWSAccountID:    "123456789012",
+		ContextTemplate: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1",
+	}
+	got := cfg.ResolveContext("beta", "internal")
+	want := "arn:aws:eks:eu-central-1:123456789012:cluster/tf-beta-internal-1"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveSecretName(t *testing.T) {
+	cfg := Config{SecretNameTemplate: "tf-{namespace}-{env}-secrets"}
+	got := cfg.ResolveSecretName("example-ns", "beta")
+	want := "tf-example-ns-beta-secrets"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestLoginCommand_DefaultsWhenUnset(t *testing.T) {
+	cfg := Config{}
+	if got := cfg.LoginCommand(); got != DefaultAWSSSOLoginCommand {
+		t.Fatalf("got %q, want default %q", got, DefaultAWSSSOLoginCommand)
+	}
+
+	cfg.AWSSSOLoginCommand = "aws sso login --profile custom"
+	if got := cfg.LoginCommand(); got != "aws sso login --profile custom" {
+		t.Fatalf("expected custom login command to be used, got %q", got)
 	}
 }

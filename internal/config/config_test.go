@@ -28,6 +28,7 @@ envs:
 aws_region: "eu-central-1"
 aws_account_id: "123456789012"
 secret_name_template: "tf-{namespace}-{env}-secrets"
+k8s_secret_name_template: "{namespace}-common-secrets"
 context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
 team_label_key: "example.org/team"
 `)
@@ -45,6 +46,9 @@ team_label_key: "example.org/team"
 	}
 	if len(cfg.Contexts) != 2 || len(cfg.Envs) != 2 {
 		t.Fatalf("unexpected contexts/envs: %+v", cfg)
+	}
+	if cfg.K8sSecretNameTemplate != "{namespace}-common-secrets" {
+		t.Fatalf("unexpected k8s secret name template: %q", cfg.K8sSecretNameTemplate)
 	}
 }
 
@@ -82,6 +86,24 @@ func TestResolveSecretName(t *testing.T) {
 	cfg := Config{SecretNameTemplate: "tf-{namespace}-{env}-secrets"}
 	got := cfg.ResolveSecretName("example-ns", "beta")
 	want := "tf-example-ns-beta-secrets"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveK8sSecretName_ExplicitTemplate(t *testing.T) {
+	cfg := Config{K8sSecretNameTemplate: "{namespace}-common-secrets"}
+	got := cfg.ResolveK8sSecretName("example-ns")
+	want := "example-ns-common-secrets"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveK8sSecretName_FallsBackToSecretNameTemplate(t *testing.T) {
+	cfg := Config{SecretNameTemplate: "tf-{namespace}-{env}-secrets"}
+	got := cfg.ResolveK8sSecretName("example-ns")
+	want := "tf-example-ns-{env}-secrets" // {env} intentionally left unresolved here
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

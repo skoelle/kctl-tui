@@ -34,6 +34,14 @@ aws_account_id: "123456789012"
 # environment. Available placeholders: {namespace}, {env}.
 secret_name_template: "tf-{namespace}-{env}-secrets"
 
+# Builds the Kubernetes secret name from the chosen namespace. Kept as a
+# separate template from secret_name_template above because the AWS side
+# and the Kubernetes side commonly follow different naming conventions
+# (e.g. the Kubernetes secret is per-namespace only, without an env
+# segment, because each environment already has its own cluster).
+# Available placeholders: {namespace}.
+k8s_secret_name_template: "{namespace}-common-secrets"
+
 # Builds the actual kubectl context name/ARN from region, account ID, env,
 # and context. Available placeholders: {region}, {account_id}, {env},
 # {context}. Adjust the literal parts ("tf-", "-1", cluster naming, ARN

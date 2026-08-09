@@ -41,6 +41,12 @@ type Config struct {
 	// namespace and env, e.g. "tf-{namespace}-{env}-secrets".
 	SecretNameTemplate string `yaml:"secret_name_template"`
 
+	// K8sSecretNameTemplate builds the Kubernetes secret name from a
+	// namespace, e.g. "{namespace}-common-secrets". Kept separate from
+	// SecretNameTemplate because the two sides commonly follow different
+	// naming conventions.
+	K8sSecretNameTemplate string `yaml:"k8s_secret_name_template"`
+
 	// ContextTemplate builds the actual kubectl context name/ARN from
 	// region, account_id, env, and context, e.g.
 	// "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1".
@@ -93,6 +99,22 @@ func (c Config) ResolveSecretName(namespace, env string) string {
 	return kctl.ResolveTemplate(c.SecretNameTemplate, map[string]string{
 		"namespace": namespace,
 		"env":       env,
+	})
+}
+
+// ResolveK8sSecretName builds the Kubernetes secret name for a given
+// namespace using K8sSecretNameTemplate. Falls back to
+// SecretNameTemplate resolved without an env placeholder if
+// K8sSecretNameTemplate is not configured, so existing configs keep
+// working, though setting it explicitly is recommended since the two
+// naming conventions usually differ.
+func (c Config) ResolveK8sSecretName(namespace string) string {
+	template := c.K8sSecretNameTemplate
+	if template == "" {
+		template = c.SecretNameTemplate
+	}
+	return kctl.ResolveTemplate(template, map[string]string{
+		"namespace": namespace,
 	})
 }
 

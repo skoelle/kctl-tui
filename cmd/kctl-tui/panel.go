@@ -18,16 +18,15 @@ import (
 	"github.com/skoelle/kctl-tui/internal/kubeexec"
 )
 
-// panelStep identifies which part of the redeploy/secrets wizard is shown.
+// panelStep identifies which part of the env/action wizard is shown.
 type panelStep int
 
 const (
-	stepMenu panelStep = iota
+	stepEnvMenu panelStep = iota
+	stepActionMenu
 	stepRedeployList
 	stepRedeployConfirm
 	stepAWSAuthPrompt
-	stepSecretRegion
-	stepSecretList
 	stepK8sSecretName
 	stepDiffResult
 	stepForceSyncConfirm
@@ -37,14 +36,17 @@ const (
 )
 
 type panelModel struct {
-	ctx, ns, team string
-	cfg           config.Config
+	context, ns, team string
+	cfg               config.Config
+
+	currentEnv string
 
 	step  panelStep
 	list  list.Model
 	input textinput.Model
 
-	awsRegion     string
+	deploymentName string
+
 	awsSecretID   string
 	awsValues     map[string]string
 	k8sSecretName string
@@ -57,39 +59,64 @@ type panelModel struct {
 
 func runPanel(args []string) error {
 	fs := flag.NewFlagSet("panel", flag.ContinueOnError)
-	ctx := fs.String("ctx", "", "kubectl context")
+	context := fs.String("context", "", "context (e.g. internal/external)")
 	ns := fs.String("ns", "", "namespace")
 	team := fs.String("team", "", "team label value")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	m := newPanelModel(*ctx, *ns, *team)
+	m := newPanelModel(*context, *ns, *team)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
 
-func newPanelModel(ctx, ns, team string) *panelModel {
-	l := list.New(menuItems(), list.NewDefaultDelegate(), 0, 0)
-	l.Title = fmt.Sprintf("kctl-tui panel  [ctx=%s ns=%s team=%s]", ctx, ns, team)
-	l.SetShowStatusBar(false)
-
+func newPanelModel(context, ns, team string) *panelModel {
 	ti := textinput.New()
 	ti.Focus()
 
 	cfgPath, _ := config.DefaultPath()
 	cfg, _ := config.Load(cfgPath)
 
-	return &panelModel{ctx: ctx, ns: ns, team: team, cfg: cfg, step: stepMenu, list: l, input: ti}
+	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	l.SetShowStatusBar(false)
+
+	m := &panelModel{context: context, ns: ns, team: team, cfg: cfg, step: stepEnvMenu, list: l, input: ti}
+	m.showEnvMenu()
+	return m
 }
 
-func menuItems() []list.Item {
-	return []list.Item{
-		simpleItem{label: "Redeploy (rollout restart)", value: "redeploy"},
-		simpleItem{label: "Secrets: AWS <-> Kubernetes diff", value: "secrets"},
-		simpleItem{label: "Quit (closes this tmux session)", value: "quit"},
+func (m *panelModel) showEnvMenu() {
+	items := make([]list.Item, 0, len(m.cfg.Envs)+1)
+	items = append(items, simpleItem{label: "Quit (closes this tmux session)", value: "quit"})
+	for _, env := range m.cfg.Envs {
+		items = append(items, simpleItem{label: env, value: env})
 	}
+	m.list.SetItems(items)
+	m.list.Title = fmt.Sprintf("kctl-tui panel  [context=%s ns=%s team=%s]", m.context, m.ns, m.team)
+	m.step = stepEnvMenu
+	m.currentEnv = ""
+	m.message = ""
+	m.err = nil
+}
+
+func (m *panelModel) showActionMenu() {
+	m.list.SetItems([]list.Item{
+		simpleItem{label: "Secrets sync (AWS <-> Kubernetes)", value: "secrets"},
+		simpleItem{label: "Redeploy (rollout restart)", value: "redeploy"},
+	})
+	m.list.Title = fmt.Sprintf("kctl-tui panel  [context=%s ns=%s team=%s env=%s]  (esc = back)",
+		m.context, m.ns, m.team, m.currentEnv)
+	m.step = stepActionMenu
+	m.message = ""
+	m.err = nil
+}
+
+// resolvedContext returns the actual kubectl context/ARN for the
+// currently selected env, built from the configured context_template.
+func (m *panelModel) resolvedContext() string {
+	return m.cfg.ResolveContext(m.currentEnv, m.context)
 }
 
 func (m *panelModel) Init() tea.Cmd { return nil }
@@ -129,34 +156,42 @@ func (m *panelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *panelModel) usesTextInput() bool {
 	switch m.step {
-	case stepSecretRegion, stepK8sSecretName, stepExternalSecretName:
+	case stepK8sSecretName, stepExternalSecretName:
 		return true
 	}
 	return false
 }
 
-// handleEsc closes the whole tmux session (all panes, including the two
-// k9s status panes) before quitting this program, per SPEC.md 3.6.
+// handleEsc navigates one level up: action menu -> env menu, most
+// sub-steps -> action menu. From the top-level env menu it closes the
+// whole tmux session (all panes, including the two k9s status panes)
+// before quitting this program, per SPEC.md 3.6.
 func (m *panelModel) handleEsc() (tea.Model, tea.Cmd) {
-	exec.Command("tmux", "kill-session", "-t", "kctl").Run()
-	return m, tea.Quit
+	switch m.step {
+	case stepEnvMenu:
+		exec.Command("tmux", "kill-session", "-t", "kctl").Run()
+		return m, tea.Quit
+	case stepActionMenu:
+		m.showEnvMenu()
+		return m, nil
+	default:
+		m.showActionMenu()
+		return m, nil
+	}
 }
 
 func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 	switch m.step {
-	case stepMenu:
-		return m.fromMenu()
+	case stepEnvMenu:
+		return m.fromEnvMenu()
+	case stepActionMenu:
+		return m.fromActionMenu()
 	case stepRedeployList:
 		return m.fromRedeployList()
 	case stepRedeployConfirm:
 		return m.fromRedeployConfirm()
 	case stepAWSAuthPrompt:
 		return m.fromAWSAuthPrompt()
-	case stepSecretRegion:
-		m.awsRegion = m.input.Value()
-		return m.fetchSecretList()
-	case stepSecretList:
-		return m.fromSecretList()
 	case stepK8sSecretName:
 		m.k8sSecretName = m.input.Value()
 		return m.compareAllFields()
@@ -165,18 +200,10 @@ func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 	case stepExternalSecretName:
 		return m.doForceSync()
 	case stepDiffResult, stepDone, stepError:
-		m.resetToMenu()
+		m.showActionMenu()
 		return m, nil
 	}
 	return m, nil
-}
-
-func (m *panelModel) resetToMenu() {
-	m.step = stepMenu
-	m.list.SetItems(menuItems())
-	m.list.Title = "kctl-tui panel"
-	m.message = ""
-	m.err = nil
 }
 
 // showError switches to a dedicated error screen so failures from
@@ -188,14 +215,27 @@ func (m *panelModel) showError(err error) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
+func (m *panelModel) fromEnvMenu() (tea.Model, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(simpleItem)
+	if !ok {
+		return m, nil
+	}
+	if item.value == "quit" {
+		return m.handleEsc()
+	}
+	m.currentEnv = item.value
+	m.showActionMenu()
+	return m, nil
+}
+
+func (m *panelModel) fromActionMenu() (tea.Model, tea.Cmd) {
 	item, ok := m.list.SelectedItem().(simpleItem)
 	if !ok {
 		return m, nil
 	}
 	switch item.value {
 	case "redeploy":
-		deployments, err := kubeexec.GetDeployments(m.ns)
+		deployments, err := kubeexec.GetDeployments(m.resolvedContext(), m.ns)
 		if err != nil {
 			return m.showError(err)
 		}
@@ -204,12 +244,10 @@ func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
 			items = append(items, simpleItem{label: d, value: d})
 		}
 		m.list.SetItems(items)
-		m.list.Title = "Select deployment to restart (esc = back)"
+		m.list.Title = fmt.Sprintf("Select deployment to restart [env=%s]  (esc = back)", m.currentEnv)
 		m.step = stepRedeployList
 	case "secrets":
 		return m.checkAWSAuthAndProceed()
-	case "quit":
-		return m.handleEsc()
 	}
 	return m, nil
 }
@@ -230,16 +268,13 @@ func (m *panelModel) checkAWSAuthAndProceed() (tea.Model, tea.Cmd) {
 		m.step = stepAWSAuthPrompt
 		return m, nil
 	}
-	m.step = stepSecretRegion
-	m.input.SetValue("eu-central-1")
-	m.input.Placeholder = "AWS region"
-	return m, nil
+	return m.startSecretsFlow()
 }
 
 func (m *panelModel) fromAWSAuthPrompt() (tea.Model, tea.Cmd) {
 	item, ok := m.list.SelectedItem().(simpleItem)
 	if !ok || item.value != "login" {
-		m.resetToMenu()
+		m.showActionMenu()
 		return m, nil
 	}
 	cmd := kubeexec.RunAWSLogin(m.cfg.LoginCommand())
@@ -258,77 +293,17 @@ func (m *panelModel) afterAWSLogin(execErr error) (tea.Model, tea.Cmd) {
 	if err := kubeexec.CheckAWSAuth(); err != nil {
 		return m.showError(fmt.Errorf("still not authenticated with AWS after running '%s': %w", m.cfg.LoginCommand(), err))
 	}
-	m.step = stepSecretRegion
-	m.input.SetValue("eu-central-1")
-	m.input.Placeholder = "AWS region"
-	return m, nil
+	return m.startSecretsFlow()
 }
 
-func (m *panelModel) fromRedeployList() (tea.Model, tea.Cmd) {
-	item, ok := m.list.SelectedItem().(simpleItem)
-	if !ok {
-		return m, nil
-	}
-	m.k8sSecretName = item.value // reused as "deployment name" here
-	m.list.SetItems([]list.Item{
-		simpleItem{label: "Yes, restart " + item.value, value: "yes"},
-		simpleItem{label: "Cancel", value: "no"},
-	})
-	m.list.Title = "Confirm rollout restart"
-	m.step = stepRedeployConfirm
-	return m, nil
-}
-
-func (m *panelModel) fromRedeployConfirm() (tea.Model, tea.Cmd) {
-	item, ok := m.list.SelectedItem().(simpleItem)
-	if !ok || item.value != "yes" {
-		m.resetToMenu()
-		return m, nil
-	}
-	deployment := m.k8sSecretName // set in fromRedeployList
-	_, err := kubeexec.RolloutRestart(m.ns, deployment)
+// startSecretsFlow computes the AWS secret ID from the configured
+// template (namespace + env) and fetches it directly - no more listing
+// secrets or asking for a region, both now driven by config.
+func (m *panelModel) startSecretsFlow() (tea.Model, tea.Cmd) {
+	m.awsSecretID = m.cfg.ResolveSecretName(m.ns, m.currentEnv)
+	raw, err := kubeexec.GetAWSSecretString(m.awsSecretID, m.cfg.AWSRegion)
 	if err != nil {
-		return m.showError(err)
-	}
-	status, err := kubeexec.RolloutStatus(m.ns, deployment)
-	if err != nil {
-		return m.showError(err)
-	}
-	m.message = "Rollout status: " + status
-	m.step = stepDone
-	return m, nil
-}
-
-// fetchSecretList lists all AWS Secrets Manager secrets in the chosen
-// region so the user can pick one instead of typing the exact secret ID.
-func (m *panelModel) fetchSecretList() (tea.Model, tea.Cmd) {
-	names, err := kubeexec.ListAWSSecrets(m.awsRegion)
-	if err != nil {
-		return m.showError(err)
-	}
-	if len(names) == 0 {
-		return m.showError(fmt.Errorf("no AWS secrets found in region %s (or missing IAM permissions)", m.awsRegion))
-	}
-	items := make([]list.Item, 0, len(names))
-	for _, n := range names {
-		items = append(items, simpleItem{label: n, value: n})
-	}
-	m.list.SetItems(items)
-	m.list.Title = "Select AWS secret (esc = back to menu)"
-	m.step = stepSecretList
-	return m, nil
-}
-
-func (m *panelModel) fromSecretList() (tea.Model, tea.Cmd) {
-	item, ok := m.list.SelectedItem().(simpleItem)
-	if !ok {
-		return m, nil
-	}
-	m.awsSecretID = item.value
-
-	raw, err := kubeexec.GetAWSSecretString(m.awsSecretID, m.awsRegion)
-	if err != nil {
-		return m.showError(err)
+		return m.showError(fmt.Errorf("failed to fetch AWS secret %q: %w", m.awsSecretID, err))
 	}
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
@@ -347,17 +322,51 @@ func (m *panelModel) fromSecretList() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *panelModel) fromRedeployList() (tea.Model, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(simpleItem)
+	if !ok {
+		return m, nil
+	}
+	m.deploymentName = item.value
+	m.list.SetItems([]list.Item{
+		simpleItem{label: "Yes, restart " + item.value, value: "yes"},
+		simpleItem{label: "Cancel", value: "no"},
+	})
+	m.list.Title = fmt.Sprintf("Confirm rollout restart [env=%s]", m.currentEnv)
+	m.step = stepRedeployConfirm
+	return m, nil
+}
+
+func (m *panelModel) fromRedeployConfirm() (tea.Model, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(simpleItem)
+	if !ok || item.value != "yes" {
+		m.showActionMenu()
+		return m, nil
+	}
+	ctx := m.resolvedContext()
+	_, err := kubeexec.RolloutRestart(ctx, m.ns, m.deploymentName)
+	if err != nil {
+		return m.showError(err)
+	}
+	status, err := kubeexec.RolloutStatus(ctx, m.ns, m.deploymentName)
+	if err != nil {
+		return m.showError(err)
+	}
+	m.message = fmt.Sprintf("[env=%s] Rollout status: %s", m.currentEnv, status)
+	m.step = stepDone
+	return m, nil
+}
+
 // compareAllFields fetches every field of the Kubernetes secret and diffs
-// it against every key of the AWS secret in one go, instead of requiring
-// the user to pick a single field.
+// it against every key of the templated AWS secret in one go.
 func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
-	k8sValues, err := kubeexec.GetSecretAllFields(m.ns, m.k8sSecretName)
+	k8sValues, err := kubeexec.GetSecretAllFields(m.resolvedContext(), m.ns, m.k8sSecretName)
 	if err != nil {
 		return m.showError(err)
 	}
 	m.k8sValues = k8sValues
 	m.diffEntries = diffSecretValues(m.awsValues, m.k8sValues)
-	m.message = renderDiffTable(m.awsSecretID, m.k8sSecretName, m.diffEntries)
+	m.message = renderDiffTable(m.currentEnv, m.awsSecretID, m.k8sSecretName, m.diffEntries)
 
 	if anyMismatch(m.diffEntries) {
 		m.list.SetItems([]list.Item{
@@ -372,9 +381,9 @@ func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func renderDiffTable(awsSecretID, k8sSecretName string, entries []kctl.SecretDiffEntry) string {
+func renderDiffTable(env, awsSecretID, k8sSecretName string, entries []kctl.SecretDiffEntry) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "AWS secret: %s   Kubernetes secret: %s\n\n", awsSecretID, k8sSecretName)
+	fmt.Fprintf(&b, "env: %s   AWS secret: %s   Kubernetes secret: %s\n\n", env, awsSecretID, k8sSecretName)
 	fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", "KEY", "AWS", "KUBERNETES", "STATUS")
 	for _, e := range entries {
 		status := "OK"
@@ -411,7 +420,7 @@ func (m *panelModel) fromForceSyncConfirm() (tea.Model, tea.Cmd) {
 func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
 	name := m.input.Value()
 	ts := time.Now().Unix()
-	_, err := kubeexec.AnnotateForceSync(m.ns, name, ts)
+	_, err := kubeexec.AnnotateForceSync(m.resolvedContext(), m.ns, name, ts)
 	if err != nil {
 		return m.showError(err)
 	}
@@ -422,8 +431,12 @@ func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
 
 func (m *panelModel) View() string {
 	switch m.step {
-	case stepMenu, stepRedeployList, stepRedeployConfirm, stepSecretList:
-		return m.list.View()
+	case stepEnvMenu, stepActionMenu, stepRedeployList, stepRedeployConfirm:
+		v := m.list.View()
+		if m.err != nil {
+			v += "\nerror: " + m.err.Error()
+		}
+		return v
 	case stepAWSAuthPrompt:
 		errText := ""
 		if m.err != nil {
@@ -433,25 +446,23 @@ func (m *panelModel) View() string {
 	case stepForceSyncConfirm:
 		return m.message + "\n\n" + m.list.View()
 	case stepDiffResult, stepDone:
-		return m.message + "\n\n(press enter to return to menu, esc to close session)"
+		return m.message + "\n\n(press enter to return to the action menu, esc to go back)"
 	case stepError:
 		errText := "unknown error"
 		if m.err != nil {
 			errText = m.err.Error()
 		}
-		return "ERROR:\n\n" + errText + "\n\n(press enter to return to menu, esc to close session)"
+		return "ERROR:\n\n" + errText + "\n\n(press enter to return to the action menu, esc to go back)"
 	default:
-		return fmt.Sprintf("%s\n\n%s\n\n(enter = confirm, esc = back to menu/close session)",
+		return fmt.Sprintf("%s\n\n%s\n\n(enter = confirm, esc = back)",
 			m.stepPrompt(), m.input.View())
 	}
 }
 
 func (m *panelModel) stepPrompt() string {
 	switch m.step {
-	case stepSecretRegion:
-		return "AWS region to list secrets from"
 	case stepK8sSecretName:
-		return "Kubernetes secret name (in namespace " + m.ns + ")"
+		return fmt.Sprintf("Kubernetes secret name (env=%s, namespace=%s)", m.currentEnv, m.ns)
 	case stepExternalSecretName:
 		return "ExternalSecret object name to annotate"
 	}

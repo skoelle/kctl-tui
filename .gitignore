@@ -1,8 +1,8 @@
 # Binaries
 /bin/
 /dist/
-kctl-tui
-kctl-tui.exe
+/kctl-tui
+/kctl-tui.exe
 
 # Go
 *.test

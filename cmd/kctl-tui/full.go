@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/list"
@@ -235,6 +236,7 @@ func (m *fullModel) loadNamespacesFor(teamValue string) tea.Cmd {
 			for ns := range m.namespaces {
 				names = append(names, ns)
 			}
+			sort.Strings(names)
 		} else {
 			names = namespacesForLabelValue(m.namespaces, m.cfg.TeamLabelKey, teamValue)
 		}
@@ -257,25 +259,30 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 		selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)
 
 	envA := m.cfg.Envs[0]
-	envB := m.cfg.Envs[0]
-	if len(m.cfg.Envs) > 1 {
-		envB = m.cfg.Envs[1]
-	}
 	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
-	ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
-
 	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
-	k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
 
-	c := exec.Command("tmux", "new-session", "-d", "-s", "kctl",
+	args := []string{
+		"new-session", "-d", "-s", "kctl",
 		panelCmd, ";",
 		"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
 		"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
-		"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+	}
+	if len(m.cfg.Envs) > 1 {
+		envB := m.cfg.Envs[1]
+		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
+		k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+		args = append(args,
+			"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+		)
+	}
+	args = append(args,
 		"select-layout", "-t", "kctl", "even-vertical", ";",
 		"select-pane", "-t", "kctl:0.0", ";",
 		"attach", "-t", "kctl",
 	)
+
+	c := exec.Command("tmux", args...)
 
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return tmuxDoneMsg{err: err}

@@ -20,11 +20,21 @@ import (
 
 func runOutput(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
-	out, err := cmd.CombinedOutput()
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("%s %s failed: %w\n%s", name, strings.Join(args, " "), err, string(out))
+		msg := fmt.Sprintf("%s %s failed: %v", name, strings.Join(args, " "), err)
+		if s := strings.TrimSpace(stderr.String()); s != "" {
+			msg += "\n" + s
+		}
+		if s := strings.TrimSpace(stdout.String()); s != "" {
+			msg += "\n" + s
+		}
+		return "", fmt.Errorf("%s", msg)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 // kubectlArgs prepends a --context flag when context is non-empty.

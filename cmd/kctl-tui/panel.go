@@ -76,13 +76,18 @@ func newPanelModel(context, ns, team string) *panelModel {
 	ti.Focus()
 
 	cfgPath, _ := config.DefaultPath()
-	cfg, _ := config.Load(cfgPath)
+	cfg, loadErr := config.Load(cfgPath)
 
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.SetShowStatusBar(false)
 
 	m := &panelModel{context: context, ns: ns, team: team, cfg: cfg, step: stepEnvMenu, list: l, input: ti}
-	m.showEnvMenu()
+	if loadErr != nil {
+		m.err = fmt.Errorf("config load failed: %w", loadErr)
+		m.step = stepError
+	} else {
+		m.showEnvMenu()
+	}
 	return m
 }
 

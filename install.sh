@@ -37,10 +37,31 @@ case "$os" in
 esac
 
 echo "Detecting latest release for $REPO ..."
-latest_tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+
+http_status="$(curl -sSL -o /tmp/kctl-tui-release.json -w '%{http_code}' "https://api.github.com/repos/${REPO}/releases/latest")"
+
+if [ "$http_status" != "200" ]; then
+  echo "" >&2
+  echo "Could not find a published release for ${REPO} (HTTP ${http_status})." >&2
+  echo "This usually means no release has been tagged yet." >&2
+  echo "" >&2
+  echo "Options:" >&2
+  echo "  1) Ask the maintainer to push a version tag (e.g. 'git tag v0.1.0 && git push origin v0.1.0')," >&2
+  echo "     which triggers the release build via GitHub Actions." >&2
+  echo "  2) Build from source instead:" >&2
+  echo "       git clone https://github.com/${REPO}.git" >&2
+  echo "       cd $(basename "$REPO")" >&2
+  echo "       go build -o ${BIN_NAME} ./cmd/${BIN_NAME}" >&2
+  echo "       sudo mv ${BIN_NAME} ${INSTALL_DIR}/" >&2
+  rm -f /tmp/kctl-tui-release.json
+  exit 1
+fi
+
+latest_tag="$(grep -m1 '"tag_name"' /tmp/kctl-tui-release.json | sed -E 's/.*"([^"]+)".*/\1/')"
+rm -f /tmp/kctl-tui-release.json
 
 if [ -z "$latest_tag" ]; then
-  echo "Could not determine latest release tag. Is there at least one published release?" >&2
+  echo "Could not parse the latest release tag from the GitHub API response." >&2
   exit 1
 fi
 

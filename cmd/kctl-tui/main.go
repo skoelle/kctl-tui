@@ -39,9 +39,7 @@ func main() {
 
 	if showHelp || len(filtered) == 0 {
 		printUsage()
-		if showHelp && len(filtered) == 0 {
-			return
-		}
+		return
 	}
 
 	if len(filtered) > 0 {
@@ -64,6 +62,10 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		default:
+			fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", filtered[0])
+			printUsage()
+			os.Exit(1)
 		}
 	}
 

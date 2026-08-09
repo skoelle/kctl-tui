@@ -92,10 +92,10 @@ Example startup command (generic placeholders):
 # Kill stale session first (separate command — tmux aborts on kill-session error).
 tmux kill-session -t kctl
 tmux new-session -d -s kctl \
-  -- "kctl-tui panel --context=$CTX_A --ns=$NS --team=$TEAM" \; \
+  "kctl-tui panel --context=$CTX_A --ns=$NS --team=$TEAM" \; \
   set-option -t kctl remain-on-exit on \; \
-  split-window -v -t kctl:0.0 -- "k9s --context $CTX_A -n $NS" \; \
-  split-window -v -t kctl:0.1 -- "k9s --context $CTX_B -n $NS" \; \
+  split-window -v -t kctl:0.0 "k9s --context $CTX_A -n $NS" \; \
+  split-window -v -t kctl:0.1 "k9s --context $CTX_B -n $NS" \; \
   select-layout -t kctl even-vertical \; \
   select-pane -t kctl:0.0 \; \
   attach -t kctl

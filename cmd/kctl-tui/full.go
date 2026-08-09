@@ -264,44 +264,41 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 		if err := kubeexec.CheckTool("k9s"); err != nil {
 			return errMsg{err}
 		}
-		return m.buildAndRunTmux()
-	}
-}
 
-func (m *fullModel) buildAndRunTmux() tea.Msg {
-	selfPath := "kctl-tui" // resolved via PATH; see README for install instructions
-	panelCmd := fmt.Sprintf("%s panel --context=%s --ns=%s --team=%s",
-		selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)
+		selfPath := "kctl-tui" // resolved via PATH; see README for install instructions
+		panelCmd := fmt.Sprintf("%s panel --context=%s --ns=%s --team=%s",
+			selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)
 
-	envA := m.cfg.Envs[0]
-	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
-	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
+		envA := m.cfg.Envs[0]
+		ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
+		k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
 
-	args := []string{
-		"new-session", "-d", "-s", "kctl",
-		panelCmd, ";",
-		"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
-		"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
-	}
-	if len(m.cfg.Envs) > 1 {
-		envB := m.cfg.Envs[1]
-		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
-		k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+		args := []string{
+			"new-session", "-d", "-s", "kctl",
+			panelCmd, ";",
+			"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
+			"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
+		}
+		if len(m.cfg.Envs) > 1 {
+			envB := m.cfg.Envs[1]
+			ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
+			k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+			args = append(args,
+				"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+			)
+		}
 		args = append(args,
-			"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+			"select-layout", "-t", "kctl", "even-vertical", ";",
+			"select-pane", "-t", "kctl:0.0", ";",
+			"attach", "-t", "kctl",
 		)
+
+		c := exec.Command("tmux", args...)
+
+		return tea.ExecProcess(c, func(err error) tea.Msg {
+			return tmuxDoneMsg{err: err}
+		})
 	}
-	args = append(args,
-		"select-layout", "-t", "kctl", "even-vertical", ";",
-		"select-pane", "-t", "kctl:0.0", ";",
-		"attach", "-t", "kctl",
-	)
-
-	c := exec.Command("tmux", args...)
-
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return tmuxDoneMsg{err: err}
-	})
 }
 
 func (m *fullModel) View() string {

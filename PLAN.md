@@ -76,11 +76,11 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 
 ## Phase 4 — Nice-to-haves (open, not committed)
 
+- [x] `--version` flag — prints version, set via `-ldflags` at build time.
+- [x] Config validation command (`kctl-tui config check`) — validates
+      required fields and shows a resolved context example.
 - [ ] Optional direct use of `client-go` instead of shelling out to
       `kubectl`, for faster context/namespace/label queries.
-- [ ] Config validation command (`kctl-tui config check`) that reports
-      unknown label keys or context names not present in the current
-      kubeconfig.
 - [ ] Homebrew tap / `scoop` manifest as additional install options
       alongside `install.sh`.
 

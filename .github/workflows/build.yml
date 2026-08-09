@@ -60,7 +60,7 @@ jobs:
           ext=""
           if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
           out="dist/kctl-tui-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
-          go build -o "$out" -ldflags "-s -w" ./cmd/kctl-tui
+          go build -o "$out" -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" ./cmd/kctl-tui
           echo "Built $out"
 
       - name: Upload artifact

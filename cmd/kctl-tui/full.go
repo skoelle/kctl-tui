@@ -50,6 +50,7 @@ func newFullModel() *fullModel {
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "kctl-tui"
 	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
 	return &fullModel{list: l}
 }
 

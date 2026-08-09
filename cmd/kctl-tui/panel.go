@@ -84,6 +84,7 @@ func newPanelModel(context, ns, team string) *panelModel {
 
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
 
 	m := &panelModel{context: context, ns: ns, team: team, cfg: cfg, step: stepEnvMenu, list: l, input: ti}
 	if loadErr != nil {

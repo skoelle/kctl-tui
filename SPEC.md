@@ -89,7 +89,8 @@ not cover: **redeploy** and **secrets diff**.
 Example startup command (generic placeholders):
 
 ```
-tmux kill-session -t kctl \; \
+# Kill stale session first (separate command — tmux aborts on kill-session error).
+tmux kill-session -t kctl
 tmux new-session -d -s kctl \
   -- "kctl-tui panel --context=$CTX_A --ns=$NS --team=$TEAM" \; \
   set-option -t kctl remain-on-exit on \; \

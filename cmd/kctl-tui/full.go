@@ -277,8 +277,10 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
 	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
 
+	// Kill stale session first (ignore error if none exists).
+	exec.Command("tmux", "kill-session", "-t", "kctl").Run()
+
 	args := []string{
-		"kill-session", "-t", "kctl", ";", // ignore error if no session exists
 		"new-session", "-d", "-s", "kctl",
 		"--", panelCmd, ";",
 		"set-option", "-t", "kctl", "remain-on-exit", "on", ";",

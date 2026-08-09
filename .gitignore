@@ -1,0 +1,18 @@
+# Binaries
+/bin/
+/dist/
+kctl-tui
+kctl-tui.exe
+
+# Go
+*.test
+*.out
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/

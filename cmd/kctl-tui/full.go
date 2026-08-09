@@ -20,9 +20,12 @@ const (
 	screenNamespace
 )
 
-// fullModel drives the interactive context -> team -> namespace navigation
-// and, once a namespace is chosen, launches the 3-pane tmux session
-// (control pane + two k9s panes) via tea.ExecProcess.
+// fullModel drives the interactive navigation. It starts directly at the
+// team-selection screen using the configured default context, and only
+// shows the context screen when the user explicitly goes back via Esc.
+// Once a namespace is chosen, it launches the 3-pane tmux session
+// (control pane + two k9s panes, one per configured env) via
+// tea.ExecProcess.
 type fullModel struct {
 	list  list.Model
 	state screenState
@@ -42,48 +45,43 @@ func newFullModel() *fullModel {
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "kctl-tui"
 	l.SetShowStatusBar(false)
-	return &fullModel{list: l, state: screenContext}
+	return &fullModel{list: l}
 }
 
 func (m *fullModel) Init() tea.Cmd {
-	return m.loadContexts
+	return m.bootstrap
 }
 
-func (m *fullModel) loadContexts() tea.Msg {
-	contexts, err := kubeexec.GetContexts()
+// bootstrap loads the config and applies the default context so the tool
+// can jump straight to the team-selection screen.
+func (m *fullModel) bootstrap() tea.Msg {
+	cfgPath, _ := config.DefaultPath()
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return errMsg{err}
 	}
-	current := kubeexec.GetCurrentContext()
-
-	cfgPath, _ := config.DefaultPath()
-	cfg, _ := config.Load(cfgPath)
-
-	items := make([]list.Item, 0, len(contexts))
-	if current != "" {
-		items = append(items, simpleItem{label: "(current) " + current, value: current})
+	if len(cfg.Contexts) == 0 {
+		return errMsg{fmt.Errorf("no 'contexts' configured in ~/.kctl-tui/config.yaml (see config.example.yaml)")}
 	}
-	for _, c := range contexts {
-		if c != current {
-			items = append(items, simpleItem{label: c, value: c})
-		}
+	if len(cfg.Envs) == 0 {
+		return errMsg{fmt.Errorf("no 'envs' configured in ~/.kctl-tui/config.yaml (see config.example.yaml)")}
 	}
-	return contextsLoadedMsg{items: items, cfg: cfg}
+	return bootstrapMsg{cfg: cfg, context: cfg.EffectiveDefaultContext()}
 }
 
-type contextsLoadedMsg struct {
-	items []list.Item
-	cfg   config.Config
+type bootstrapMsg struct {
+	cfg     config.Config
+	context string
 }
+
+type contextsLoadedMsg struct{ items []list.Item }
 
 type teamsLoadedMsg struct {
 	items      []list.Item
 	namespaces map[string]map[string]string
 }
 
-type namespacesLoadedMsg struct {
-	items []list.Item
-}
+type namespacesLoadedMsg struct{ items []list.Item }
 
 type tmuxDoneMsg struct{ err error }
 
@@ -100,8 +98,12 @@ func (m *fullModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 
-	case contextsLoadedMsg:
+	case bootstrapMsg:
 		m.cfg = msg.cfg
+		m.selectedContext = msg.context
+		return m, m.loadTeams
+
+	case contextsLoadedMsg:
 		m.state = screenContext
 		m.list.Title = "Select context (enter = confirm, esc/ctrl+c = quit)"
 		m.list.SetItems(msg.items)
@@ -110,7 +112,7 @@ func (m *fullModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case teamsLoadedMsg:
 		m.namespaces = msg.namespaces
 		m.state = screenTeam
-		m.list.Title = "Select team (esc = back to context)"
+		m.list.Title = fmt.Sprintf("Select team [context=%s]  (esc = back to context)", m.selectedContext)
 		m.list.SetItems(msg.items)
 		return m, nil
 
@@ -157,6 +159,18 @@ func (m *fullModel) handleBack() (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m *fullModel) loadContexts() tea.Msg {
+	items := make([]list.Item, 0, len(m.cfg.Contexts))
+	for _, c := range m.cfg.Contexts {
+		label := c
+		if c == m.selectedContext {
+			label = "(current) " + c
+		}
+		items = append(items, simpleItem{label: label, value: c})
+	}
+	return contextsLoadedMsg{items: items}
+}
+
 func (m *fullModel) handleSelect() (tea.Model, tea.Cmd) {
 	item, ok := m.list.SelectedItem().(simpleItem)
 	if !ok {
@@ -166,9 +180,6 @@ func (m *fullModel) handleSelect() (tea.Model, tea.Cmd) {
 	switch m.state {
 	case screenContext:
 		m.selectedContext = item.value
-		if err := kubeexec.UseContext(item.value); err != nil {
-			return m, func() tea.Msg { return errMsg{err} }
-		}
 		return m, m.loadTeams
 
 	case screenTeam:
@@ -177,16 +188,24 @@ func (m *fullModel) handleSelect() (tea.Model, tea.Cmd) {
 
 	case screenNamespace:
 		m.selectedNamespace = item.value
-		if err := kubeexec.SetNamespace(item.value); err != nil {
-			return m, func() tea.Msg { return errMsg{err} }
-		}
 		return m, m.startTmuxSession()
 	}
 	return m, nil
 }
 
+// bootstrapContext resolves a kubectl context purely to discover
+// namespaces/labels for the team/namespace screens. The first configured
+// env is used as a stable default for this discovery step, since
+// namespace names are assumed to be identical across envs.
+func (m *fullModel) bootstrapContext() string {
+	if len(m.cfg.Envs) == 0 {
+		return ""
+	}
+	return m.cfg.ResolveContext(m.cfg.Envs[0], m.selectedContext)
+}
+
 func (m *fullModel) loadTeams() tea.Msg {
-	namespaces, err := kubeexec.GetNamespacesWithLabels()
+	namespaces, err := kubeexec.GetNamespacesWithLabels(m.bootstrapContext())
 	if err != nil {
 		return errMsg{err}
 	}
@@ -227,25 +246,26 @@ func (m *fullModel) loadNamespacesFor(teamValue string) tea.Cmd {
 	}
 }
 
-// startTmuxSession builds the 3-pane tmux command (control pane running
-// this binary in "panel" mode, plus two k9s status panes) and runs it via
-// tea.ExecProcess so the Bubble Tea UI cleanly hands over the terminal.
-//
-// Layout: even-vertical stacks all three panes evenly from top to bottom
-// (control pane, then the two k9s status panes). remain-on-exit keeps a
-// pane visible (showing its exit status/output) instead of tmux silently
-// closing it if the control pane's process crashes on startup.
+// startTmuxSession builds the 3-pane tmux command: the control pane runs
+// this binary in "panel" mode (letting the user pick an env and an
+// action), and the two status panes run k9s against the first two
+// configured envs, resolved via the context template, so both are
+// visible side by side.
 func (m *fullModel) startTmuxSession() tea.Cmd {
 	selfPath := "kctl-tui" // resolved via PATH; see README for install instructions
-	panelCmd := fmt.Sprintf("%s panel --ctx=%s --ns=%s --team=%s",
+	panelCmd := fmt.Sprintf("%s panel --context=%s --ns=%s --team=%s",
 		selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)
-	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", m.selectedContext, m.selectedNamespace)
 
-	secondCtx := m.selectedContext
-	if next, ok := findNextContext(m.selectedContext, m.cfg.ContextPairs); ok {
-		secondCtx = next
+	envA := m.cfg.Envs[0]
+	envB := m.cfg.Envs[0]
+	if len(m.cfg.Envs) > 1 {
+		envB = m.cfg.Envs[1]
 	}
-	k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", secondCtx, m.selectedNamespace)
+	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
+	ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
+
+	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
+	k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
 
 	c := exec.Command("tmux", "new-session", "-d", "-s", "kctl",
 		panelCmd, ";",

@@ -40,9 +40,12 @@ func main() {
 		kubeexec.SetVerbose(true, os.Stderr)
 	}
 
-	if showHelp || len(filtered) == 0 {
+	if showHelp {
 		printUsage()
 		return
+	}
+	if len(filtered) == 0 {
+		// No subcommand — start the full TUI.
 	}
 
 	if len(filtered) > 0 {

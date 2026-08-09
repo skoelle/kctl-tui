@@ -97,5 +97,4 @@ else
 fi
 
 echo "Installed ${BIN_NAME} to ${INSTALL_DIR}/${BIN_NAME}"
-"${INSTALL_DIR}/${BIN_NAME}" --help >/dev/null 2>&1 || true
 echo "Done. Run '${BIN_NAME}' to get started."

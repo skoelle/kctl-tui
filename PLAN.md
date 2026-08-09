@@ -14,7 +14,7 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
       API is unreachable.
 - [x] `README.md`, `config.example.yaml`.
 
-## Phase 1 — Core logic + navigation (done, initial version)
+## Phase 1 — Core logic + navigation (done)
 
 - [x] `internal/kctl`: pure, unit-tested logic —
       template resolution (`ResolveTemplate`), namespace/label filtering
@@ -49,41 +49,63 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
         **whole secret** (one ExternalSecret annotation).
       - `Esc` closes the whole tmux session (`tmux kill-session`).
 
-## Phase 2 — Hardening (open)
+## Phase 2 — Hardening (done)
 
-- [ ] Handle non-JSON AWS secrets and Kubernetes secrets with binary
-      (non-UTF8) values more gracefully in the diff table (currently
-      falls back to a single "value" key or may render oddly).
+- [x] Handle non-JSON AWS secrets and Kubernetes secrets with binary
+      (non-UTF8) values more gracefully in the diff table.
 - [ ] Add integration-style tests against a local `kind`/`k3d` cluster in
       CI for the `kubeexec` wrappers currently excluded from automated
-      testing.
-- [ ] Input validation for the free-text steps in "panel" mode (empty
-      region/secret name, invalid characters).
-- [ ] Graceful handling when `tmux`, `k9s`, or `aws` are not installed
-      (currently surfaces the raw exec error).
-- [ ] Structured logging / `--verbose` flag for troubleshooting failed
+      testing. *(Deferred — superseded by client-go in v0.3.0)*
+- [x] Input validation for the free-text steps in "panel" mode.
+- [x] Graceful handling when `tmux`, `k9s`, or `aws` are not installed.
+- [x] Structured logging / `--verbose` flag for troubleshooting failed
       `kubectl`/`aws` calls.
-- [ ] Paginate/scroll the secrets diff table for secrets with many fields
-      instead of relying on terminal wrapping.
+- [x] Paginate/scroll the secrets diff table for secrets with many fields.
 
 ## Phase 3 — Windows-native support (done)
 
-- [x] Windows support via [psmux](https://github.com/marlocarlo/psmux) —
-      a native, tmux-compatible terminal multiplexer. kctl-tui works
-      without code changes; `CheckTool("tmux")` error message includes
-      Windows-specific install hint.
+- [x] Windows support via [psmux](https://github.com/marlocarlo/psmux).
 - [x] `install.ps1` — PowerShell install script for Windows.
 - [x] Updated README and SPEC with Windows + psmux setup instructions.
 
-## Phase 4 — Nice-to-haves (open, not committed)
+## Phase 4 — Nice-to-haves (done for v0.2.0)
 
 - [x] `--version` flag — prints version, set via `-ldflags` at build time.
 - [x] Config validation command (`kctl-tui config check`) — validates
       required fields and shows a resolved context example.
-- [ ] Optional direct use of `client-go` instead of shelling out to
-      `kubectl`, for faster context/namespace/label queries.
-- [ ] Homebrew tap / `scoop` manifest as additional install options
-      alongside `install.sh`.
+- [x] `kctl-tui doctor` — health check for tools, config, and connectivity.
+- [x] `--help` flag with full usage documentation.
+- [x] CHANGELOG.md, CONTRIBUTING.md, GitHub Issue/PR templates.
+
+---
+
+## Roadmap
+
+### v0.3.0 — client-go integration
+
+Replace kubectl shell-outs with direct API calls via `client-go`.
+
+- [ ] Add `internal/kubeclient` package using `client-go` for:
+      - Context/namespace/label queries (faster than kubectl JSON parsing)
+      - Deployment list and rollout restart/status
+      - Secret fetch (AWS Secrets Manager via SDK, K8s secrets via API)
+      - ExternalSecret annotation update
+- [ ] Keep `internal/kubeexec` as fallback for operations not yet
+      covered by `client-go`
+- [ ] Remove `kind`/`k3d` integration test plan (client-go has its own
+      test coverage)
+- [ ] Add unit tests with `fake.Clientset` for the new package
+
+### v1.0 — Stable release
+
+Production-ready with package manager support and documentation.
+
+- [ ] Homebrew tap (`skoelle/homebrew-tap`) with `kctl-tui` formula
+- [ ] Scoop manifest (`skoelle/scoop-bucket`) for Windows
+- [ ] Full test coverage for `internal/kubeclient`
+- [ ] Documentation: architecture diagram, config reference, troubleshooting
+- [ ] Semantic versioning policy documented
+- [ ] Deprecation policy for config schema changes
 
 ## Notes for contributors
 

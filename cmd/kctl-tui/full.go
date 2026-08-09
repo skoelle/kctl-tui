@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -286,28 +287,47 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 	fmt.Fprintf(os.Stderr, "[debug] panelCmd=%s\n", panelCmd)
 	fmt.Fprintf(os.Stderr, "[debug] kill-session err=%v\n", killErr)
 
-	args := []string{
-		"new-session", "-d", "-s", "kctl",
-		panelCmd, ";",
-		"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
-		"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
-	}
-	if len(m.cfg.Envs) > 1 {
-		envB := m.cfg.Envs[1]
-		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
-		k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
-		args = append(args,
-			"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		// On Windows, psmux doesn't handle ; separators when args are
+		// passed individually via exec.Command. Build the full command
+		// string and run it through cmd.exe.
+		tmuxScript := fmt.Sprintf(
+			"tmux new-session -d -s kctl %q ; set-option -t kctl remain-on-exit on ; split-window -v -t kctl:0.0 %q",
+			panelCmd, k9sCmdA,
 		)
+		if len(m.cfg.Envs) > 1 {
+			envB := m.cfg.Envs[1]
+			ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
+			k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+			tmuxScript += fmt.Sprintf(" ; split-window -v -t kctl:0.1 %q", k9sCmdB)
+		}
+		tmuxScript += " ; select-layout -t kctl even-vertical ; select-pane -t kctl:0.0 ; attach -t kctl"
+		fmt.Fprintf(os.Stderr, "[debug] windows cmd: %s\n", tmuxScript)
+		c = exec.Command("cmd.exe", "/c", tmuxScript)
+	} else {
+		args := []string{
+			"new-session", "-d", "-s", "kctl",
+			panelCmd, ";",
+			"set-option", "-t", "kctl", "remain-on-exit", "on", ";",
+			"split-window", "-v", "-t", "kctl:0.0", k9sCmdA, ";",
+		}
+		if len(m.cfg.Envs) > 1 {
+			envB := m.cfg.Envs[1]
+			ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
+			k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+			args = append(args,
+				"split-window", "-v", "-t", "kctl:0.1", k9sCmdB, ";",
+			)
+		}
+		args = append(args,
+			"select-layout", "-t", "kctl", "even-vertical", ";",
+			"select-pane", "-t", "kctl:0.0", ";",
+			"attach", "-t", "kctl",
+		)
+		fmt.Fprintf(os.Stderr, "[debug] unix args: %v\n", args)
+		c = exec.Command("tmux", args...)
 	}
-	args = append(args,
-		"select-layout", "-t", "kctl", "even-vertical", ";",
-		"select-pane", "-t", "kctl:0.0", ";",
-		"attach", "-t", "kctl",
-	)
-
-	fmt.Fprintf(os.Stderr, "[debug] tmux args: %v\n", args)
-	c := exec.Command("tmux", args...)
 
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return tmuxDoneMsg{err: err}

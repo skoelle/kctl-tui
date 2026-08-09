@@ -105,6 +105,16 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
   - `helpers.go` is a pointless 1:1 passthrough to the `kctl` package
   - `IsBinary` also marks UTF-8 special chars (>0x7F) as "binary"
 
+- [ ] **SECURITY.md** — fehlt, besonders wichtig für ein Tool mit
+      Secret-Workflows.
+- [ ] **dependabot.yml** — automatische Dependency-Updates.
+- [ ] **Checksummen für Release-Assets** — CI erzeugt Binaries aber keine
+      `.sha256`-Dateien; für `curl | bash`-Install wichtig.
+- [ ] **Makefile / justfile** — Build/Test/Vet-Komfort.
+- [ ] **golangci-lint** — `go vet` allein ist dünn; optional aber empfohlen.
+- [ ] **PLAN.md aufräumen** — erledigte Phasen als „Done" markieren,
+      offene Items konsolidieren.
+
 ---
 
 ## Roadmap

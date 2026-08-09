@@ -227,4 +227,4 @@ and untested, since it has no meaningful behavior without a live cluster.
 
 ## License
 
-[MIT](LICENSE)
+Licensed under the [MIT License](LICENSE) - Copyright (c) 2026 Stefan Koelle (https://stefankoelle.de)

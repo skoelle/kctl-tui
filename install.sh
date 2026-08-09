@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Stefan Koelle (https://stefankoelle.de)
+# Licensed under the MIT License. See LICENSE file in project root for details.
 # Install script for kctl-tui.
 # Downloads the latest GitHub release binary matching the current OS/arch
 # and installs it to /usr/local/bin (or $INSTALL_DIR if set).

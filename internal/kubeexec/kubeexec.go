@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefan Koelle (https://stefankoelle.de)
+// Licensed under the MIT License. See LICENSE file in project root for details.
+
 // Package kubeexec wraps kubectl/aws-cli invocations used by kctl-tui.
 // All functions here have side effects (they run external processes) and
 // are therefore not covered by unit tests; the pure logic they depend on

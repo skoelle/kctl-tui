@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefan Koelle (https://stefankoelle.de)
+// Licensed under the MIT License. See LICENSE file in project root for details.
+
 // Package config loads the user-specific, non-versioned kctl-tui
 // configuration (contexts, envs, templates) from a YAML file.
 package config

@@ -184,3 +184,23 @@ func GetAWSSecretString(secretID, region string) (string, error) {
 		"--secret-id", secretID, "--region", region,
 		"--query", "SecretString", "--output", "text")
 }
+
+// CheckAWSAuth performs a cheap, fast call to verify the current AWS
+// credentials/SSO session are valid. Returns nil if authenticated, or the
+// underlying error (e.g. an expired SSO session) otherwise.
+func CheckAWSAuth() error {
+	_, err := runOutput("aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text")
+	return err
+}
+
+// RunAWSLogin returns an *exec.Cmd for the given login command (e.g.
+// "aws sso login"), split on whitespace. The caller is responsible for
+// running it interactively (e.g. via tea.ExecProcess) since SSO login
+// typically requires opening a browser and confirming a device code.
+func RunAWSLogin(loginCommand string) *exec.Cmd {
+	parts := strings.Fields(loginCommand)
+	if len(parts) == 0 {
+		parts = []string{"aws", "sso", "login"}
+	}
+	return exec.Command(parts[0], parts[1:]...)
+}

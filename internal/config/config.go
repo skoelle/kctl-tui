@@ -11,10 +11,26 @@ import (
 	"github.com/skoelle/kctl-tui/internal/kctl"
 )
 
+// DefaultAWSSSOLoginCommand is used when the user has not configured a
+// custom login command in their config.yaml.
+const DefaultAWSSSOLoginCommand = "aws sso login"
+
 // Config is the root structure of ~/.kctl-tui/config.yaml
 type Config struct {
-	ContextPairs []kctl.ContextPair `yaml:"context_pairs"`
-	TeamLabelKey string              `yaml:"team_label_key"`
+	ContextPairs       []kctl.ContextPair `yaml:"context_pairs"`
+	TeamLabelKey       string             `yaml:"team_label_key"`
+	AWSSSOLoginCommand string             `yaml:"aws_sso_login_command"`
+}
+
+// LoginCommand returns the configured AWS SSO login command, falling back
+// to DefaultAWSSSOLoginCommand if none is set. Organizations that wrap
+// SSO login in a custom script (e.g. to select a specific profile) can
+// override this via aws_sso_login_command in config.yaml.
+func (c Config) LoginCommand() string {
+	if c.AWSSSOLoginCommand == "" {
+		return DefaultAWSSSOLoginCommand
+	}
+	return c.AWSSSOLoginCommand
 }
 
 // DefaultPath returns the default config file location: ~/.kctl-tui/config.yaml

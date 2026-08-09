@@ -17,3 +17,10 @@ context_pairs:
 # team-selection screen. Adjust this to whatever label your organization
 # actually uses (can contain a domain prefix, e.g. "example.org/team").
 team_label_key: "example.org/team"
+
+# Command used to (re-)authenticate with AWS before the Secrets workflow,
+# if 'aws sts get-caller-identity' fails (e.g. an expired AWS SSO session).
+# Defaults to "aws sso login" if omitted. Override this if your organization
+# wraps SSO login in a custom script or needs a specific --profile, e.g.:
+#   aws_sso_login_command: "aws sso login --profile my-profile"
+aws_sso_login_command: "aws sso login"

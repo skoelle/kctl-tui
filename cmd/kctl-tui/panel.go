@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/skoelle/kctl-tui/internal/kctl"
 	"github.com/skoelle/kctl-tui/internal/kubeexec"
 )
 
@@ -22,11 +24,9 @@ const (
 	stepMenu panelStep = iota
 	stepRedeployList
 	stepRedeployConfirm
-	stepSecretID
 	stepSecretRegion
-	stepSecretKeyList
+	stepSecretList
 	stepK8sSecretName
-	stepK8sFieldName
 	stepDiffResult
 	stepForceSyncConfirm
 	stepExternalSecretName
@@ -36,21 +36,19 @@ const (
 type panelModel struct {
 	ctx, ns, team string
 
-	step panelStep
-	list list.Model
+	step  panelStep
+	list  list.Model
 	input textinput.Model
 
-	awsSecretID   string
 	awsRegion     string
+	awsSecretID   string
 	awsValues     map[string]string
-	selectedKey   string
-	awsValue      string
 	k8sSecretName string
-	k8sFieldName  string
-	k8sValue      string
+	k8sValues     map[string]string
+	diffEntries   []kctl.SecretDiffEntry
 
 	message string
-	err     error
+	err      error
 }
 
 func runPanel(args []string) error {
@@ -119,7 +117,7 @@ func (m *panelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *panelModel) usesTextInput() bool {
 	switch m.step {
-	case stepSecretID, stepSecretRegion, stepK8sSecretName, stepK8sFieldName, stepExternalSecretName:
+	case stepSecretRegion, stepK8sSecretName, stepExternalSecretName:
 		return true
 	}
 	return false
@@ -140,24 +138,14 @@ func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 		return m.fromRedeployList()
 	case stepRedeployConfirm:
 		return m.fromRedeployConfirm()
-	case stepSecretID:
-		m.awsSecretID = m.input.Value()
-		m.step = stepSecretRegion
-		m.input.SetValue("eu-central-1")
-		return m, nil
 	case stepSecretRegion:
 		m.awsRegion = m.input.Value()
-		return m.fetchAWSSecret()
-	case stepSecretKeyList:
-		return m.fromSecretKeyList()
+		return m.fetchSecretList()
+	case stepSecretList:
+		return m.fromSecretList()
 	case stepK8sSecretName:
 		m.k8sSecretName = m.input.Value()
-		m.step = stepK8sFieldName
-		m.input.SetValue("")
-		return m, nil
-	case stepK8sFieldName:
-		m.k8sFieldName = m.input.Value()
-		return m.compareSecret()
+		return m.compareAllFields()
 	case stepForceSyncConfirm:
 		return m.fromForceSyncConfirm()
 	case stepExternalSecretName:
@@ -173,6 +161,8 @@ func (m *panelModel) resetToMenu() {
 	m.step = stepMenu
 	m.list.SetItems(menuItems())
 	m.list.Title = "kctl-tui panel"
+	m.message = ""
+	m.err = nil
 }
 
 func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
@@ -195,9 +185,9 @@ func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
 		m.list.Title = "Select deployment to restart (esc = back)"
 		m.step = stepRedeployList
 	case "secrets":
-		m.step = stepSecretID
-		m.input.SetValue("")
-		m.input.Placeholder = "AWS secret ID"
+		m.step = stepSecretRegion
+		m.input.SetValue("eu-central-1")
+		m.input.Placeholder = "AWS region"
 	case "quit":
 		return m.handleEsc()
 	}
@@ -209,7 +199,7 @@ func (m *panelModel) fromRedeployList() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	m.selectedKey = item.value // reused as "deployment name" here
+	m.k8sSecretName = item.value // reused as "deployment name" here
 	m.list.SetItems([]list.Item{
 		simpleItem{label: "Yes, restart " + item.value, value: "yes"},
 		simpleItem{label: "Cancel", value: "no"},
@@ -225,17 +215,48 @@ func (m *panelModel) fromRedeployConfirm() (tea.Model, tea.Cmd) {
 		m.resetToMenu()
 		return m, nil
 	}
-	_, err := kubeexec.RolloutRestart(m.ns, m.selectedKey)
+	deployment := m.k8sSecretName // set in fromRedeployList
+	_, err := kubeexec.RolloutRestart(m.ns, deployment)
 	if err != nil {
 		m.err = err
 	}
-	status, _ := kubeexec.RolloutStatus(m.ns, m.selectedKey)
+	status, _ := kubeexec.RolloutStatus(m.ns, deployment)
 	m.message = "Rollout status: " + status
 	m.step = stepDone
 	return m, nil
 }
 
-func (m *panelModel) fetchAWSSecret() (tea.Model, tea.Cmd) {
+// fetchSecretList lists all AWS Secrets Manager secrets in the chosen
+// region so the user can pick one instead of typing the exact secret ID.
+func (m *panelModel) fetchSecretList() (tea.Model, tea.Cmd) {
+	names, err := kubeexec.ListAWSSecrets(m.awsRegion)
+	if err != nil {
+		m.err = err
+		m.resetToMenu()
+		return m, nil
+	}
+	if len(names) == 0 {
+		m.err = fmt.Errorf("no AWS secrets found in region %s (or missing IAM permissions)", m.awsRegion)
+		m.resetToMenu()
+		return m, nil
+	}
+	items := make([]list.Item, 0, len(names))
+	for _, n := range names {
+		items = append(items, simpleItem{label: n, value: n})
+	}
+	m.list.SetItems(items)
+	m.list.Title = "Select AWS secret (esc = back to menu)"
+	m.step = stepSecretList
+	return m, nil
+}
+
+func (m *panelModel) fromSecretList() (tea.Model, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(simpleItem)
+	if !ok {
+		return m, nil
+	}
+	m.awsSecretID = item.value
+
 	raw, err := kubeexec.GetAWSSecretString(m.awsSecretID, m.awsRegion)
 	if err != nil {
 		m.err = err
@@ -244,65 +265,70 @@ func (m *panelModel) fetchAWSSecret() (tea.Model, tea.Cmd) {
 	}
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		m.awsValues = map[string]string{"__raw__": raw}
+		// Not a JSON secret - treat the whole value as a single field.
+		m.awsValues = map[string]string{"value": raw}
 	} else {
 		m.awsValues = map[string]string{}
 		for k, v := range parsed {
 			m.awsValues[k] = fmt.Sprintf("%v", v)
 		}
 	}
-	items := make([]list.Item, 0, len(m.awsValues))
-	for k := range m.awsValues {
-		items = append(items, simpleItem{label: k, value: k})
-	}
-	m.list.SetItems(items)
-	m.list.Title = "Select AWS secret key to compare"
-	m.step = stepSecretKeyList
-	return m, nil
-}
 
-func (m *panelModel) fromSecretKeyList() (tea.Model, tea.Cmd) {
-	item, ok := m.list.SelectedItem().(simpleItem)
-	if !ok {
-		return m, nil
-	}
-	m.selectedKey = item.value
-	m.awsValue = m.awsValues[item.value]
 	m.step = stepK8sSecretName
 	m.input.SetValue("")
-	m.input.Placeholder = "Kubernetes secret name"
+	m.input.Placeholder = "Kubernetes secret name (in namespace " + m.ns + ")"
 	return m, nil
 }
 
-func (m *panelModel) compareSecret() (tea.Model, tea.Cmd) {
-	b64, err := kubeexec.GetSecretValueBase64(m.ns, m.k8sSecretName, m.k8sFieldName)
+// compareAllFields fetches every field of the Kubernetes secret and diffs
+// it against every key of the AWS secret in one go, instead of requiring
+// the user to pick a single field.
+func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
+	k8sValues, err := kubeexec.GetSecretAllFields(m.ns, m.k8sSecretName)
 	if err != nil {
 		m.err = err
 		m.resetToMenu()
 		return m, nil
 	}
-	decoded, err := kubeexec.DecodeBase64(b64)
-	if err != nil {
-		m.err = err
-		m.resetToMenu()
-		return m, nil
-	}
-	m.k8sValue = decoded
+	m.k8sValues = k8sValues
+	m.diffEntries = diffSecretValues(m.awsValues, m.k8sValues)
+	m.message = renderDiffTable(m.awsSecretID, m.k8sSecretName, m.diffEntries)
 
-	if m.awsValue == m.k8sValue {
-		m.message = "IDENTICAL\nAWS: " + m.awsValue + "\nK8s: " + m.k8sValue
+	if anyMismatch(m.diffEntries) {
+		m.list.SetItems([]list.Item{
+			simpleItem{label: "Yes, request force-sync for this secret", value: "yes"},
+			simpleItem{label: "No", value: "no"},
+		})
+		m.list.Title = "Values differ - request ExternalSecret force-sync?"
+		m.step = stepForceSyncConfirm
+	} else {
 		m.step = stepDiffResult
-		return m, nil
 	}
-
-	m.message = "DIFFERENT\nAWS: " + m.awsValue + "\nK8s: " + m.k8sValue
-	m.list.SetItems([]list.Item{
-		simpleItem{label: "Yes, request force-sync", value: "yes"},
-		simpleItem{label: "No", value: "no"},
-	})
-	m.list.Title = "Values differ - request ExternalSecret force-sync?"
-	m.step = stepForceSyncConfirm
 	return m, nil
+}
+
+func renderDiffTable(awsSecretID, k8sSecretName string, entries []kctl.SecretDiffEntry) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "AWS secret: %s   Kubernetes secret: %s\n\n", awsSecretID, k8sSecretName)
+	fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", "KEY", "AWS", "KUBERNETES", "STATUS")
+	for _, e := range entries {
+		status := "OK"
+		if !e.Match {
+			status = "MISMATCH"
+		}
+		fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", e.Key, truncate(e.Left, 20), truncate(e.Right, 20), status)
+	}
+	return b.String()
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	if max <= 3 {
+		return s[:max]
+	}
+	return s[:max-3] + "..."
 }
 
 func (m *panelModel) fromForceSyncConfirm() (tea.Model, tea.Cmd) {
@@ -312,7 +338,7 @@ func (m *panelModel) fromForceSyncConfirm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.step = stepExternalSecretName
-	m.input.SetValue("")
+	m.input.SetValue(m.k8sSecretName)
 	m.input.Placeholder = "ExternalSecret object name"
 	return m, nil
 }
@@ -324,21 +350,27 @@ func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
 	if err != nil {
 		m.err = err
 	}
-	m.message = "Force-sync requested (timestamp " + strconv.FormatInt(ts, 10) + ")."
+	m.message += fmt.Sprintf("\nForce-sync requested for %s (timestamp %s).", name, strconv.FormatInt(ts, 10))
 	m.step = stepDone
 	return m, nil
 }
 
 func (m *panelModel) View() string {
 	switch m.step {
-	case stepMenu, stepRedeployList, stepRedeployConfirm, stepSecretKeyList, stepForceSyncConfirm:
+	case stepMenu, stepRedeployList, stepRedeployConfirm, stepSecretList:
 		v := m.list.View()
 		if m.err != nil {
 			v += "\nerror: " + m.err.Error()
 		}
 		return v
+	case stepForceSyncConfirm:
+		return m.message + "\n\n" + m.list.View()
 	case stepDiffResult, stepDone:
-		return m.message + "\n\n(press enter to return to menu, esc to close session)"
+		v := m.message
+		if m.err != nil {
+			v += "\nerror: " + m.err.Error()
+		}
+		return v + "\n\n(press enter to return to menu, esc to close session)"
 	default:
 		return fmt.Sprintf("%s\n\n%s\n\n(enter = confirm, esc = back to menu/close session)",
 			m.stepPrompt(), m.input.View())
@@ -347,14 +379,10 @@ func (m *panelModel) View() string {
 
 func (m *panelModel) stepPrompt() string {
 	switch m.step {
-	case stepSecretID:
-		return "AWS Secrets Manager: enter secret ID"
 	case stepSecretRegion:
-		return "AWS region"
+		return "AWS region to list secrets from"
 	case stepK8sSecretName:
 		return "Kubernetes secret name (in namespace " + m.ns + ")"
-	case stepK8sFieldName:
-		return "Field name inside the Kubernetes secret for key \"" + m.selectedKey + "\""
 	case stepExternalSecretName:
 		return "ExternalSecret object name to annotate"
 	}

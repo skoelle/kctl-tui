@@ -31,6 +31,7 @@ const (
 	stepForceSyncConfirm
 	stepExternalSecretName
 	stepDone
+	stepError
 )
 
 type panelModel struct {
@@ -150,7 +151,7 @@ func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 		return m.fromForceSyncConfirm()
 	case stepExternalSecretName:
 		return m.doForceSync()
-	case stepDiffResult, stepDone:
+	case stepDiffResult, stepDone, stepError:
 		m.resetToMenu()
 		return m, nil
 	}
@@ -165,6 +166,15 @@ func (m *panelModel) resetToMenu() {
 	m.err = nil
 }
 
+// showError switches to a dedicated error screen so failures from
+// kubectl/aws calls stay visible until the user explicitly acknowledges
+// them with Enter, instead of being silently discarded.
+func (m *panelModel) showError(err error) (tea.Model, tea.Cmd) {
+	m.err = err
+	m.step = stepError
+	return m, nil
+}
+
 func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
 	item, ok := m.list.SelectedItem().(simpleItem)
 	if !ok {
@@ -174,8 +184,7 @@ func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
 	case "redeploy":
 		deployments, err := kubeexec.GetDeployments(m.ns)
 		if err != nil {
-			m.err = err
-			return m, nil
+			return m.showError(err)
 		}
 		items := make([]list.Item, 0, len(deployments))
 		for _, d := range deployments {
@@ -218,9 +227,12 @@ func (m *panelModel) fromRedeployConfirm() (tea.Model, tea.Cmd) {
 	deployment := m.k8sSecretName // set in fromRedeployList
 	_, err := kubeexec.RolloutRestart(m.ns, deployment)
 	if err != nil {
-		m.err = err
+		return m.showError(err)
 	}
-	status, _ := kubeexec.RolloutStatus(m.ns, deployment)
+	status, err := kubeexec.RolloutStatus(m.ns, deployment)
+	if err != nil {
+		return m.showError(err)
+	}
 	m.message = "Rollout status: " + status
 	m.step = stepDone
 	return m, nil
@@ -231,14 +243,10 @@ func (m *panelModel) fromRedeployConfirm() (tea.Model, tea.Cmd) {
 func (m *panelModel) fetchSecretList() (tea.Model, tea.Cmd) {
 	names, err := kubeexec.ListAWSSecrets(m.awsRegion)
 	if err != nil {
-		m.err = err
-		m.resetToMenu()
-		return m, nil
+		return m.showError(err)
 	}
 	if len(names) == 0 {
-		m.err = fmt.Errorf("no AWS secrets found in region %s (or missing IAM permissions)", m.awsRegion)
-		m.resetToMenu()
-		return m, nil
+		return m.showError(fmt.Errorf("no AWS secrets found in region %s (or missing IAM permissions)", m.awsRegion))
 	}
 	items := make([]list.Item, 0, len(names))
 	for _, n := range names {
@@ -259,9 +267,7 @@ func (m *panelModel) fromSecretList() (tea.Model, tea.Cmd) {
 
 	raw, err := kubeexec.GetAWSSecretString(m.awsSecretID, m.awsRegion)
 	if err != nil {
-		m.err = err
-		m.resetToMenu()
-		return m, nil
+		return m.showError(err)
 	}
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
@@ -286,9 +292,7 @@ func (m *panelModel) fromSecretList() (tea.Model, tea.Cmd) {
 func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
 	k8sValues, err := kubeexec.GetSecretAllFields(m.ns, m.k8sSecretName)
 	if err != nil {
-		m.err = err
-		m.resetToMenu()
-		return m, nil
+		return m.showError(err)
 	}
 	m.k8sValues = k8sValues
 	m.diffEntries = diffSecretValues(m.awsValues, m.k8sValues)
@@ -348,7 +352,7 @@ func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
 	ts := time.Now().Unix()
 	_, err := kubeexec.AnnotateForceSync(m.ns, name, ts)
 	if err != nil {
-		m.err = err
+		return m.showError(err)
 	}
 	m.message += fmt.Sprintf("\nForce-sync requested for %s (timestamp %s).", name, strconv.FormatInt(ts, 10))
 	m.step = stepDone
@@ -358,19 +362,17 @@ func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
 func (m *panelModel) View() string {
 	switch m.step {
 	case stepMenu, stepRedeployList, stepRedeployConfirm, stepSecretList:
-		v := m.list.View()
-		if m.err != nil {
-			v += "\nerror: " + m.err.Error()
-		}
-		return v
+		return m.list.View()
 	case stepForceSyncConfirm:
 		return m.message + "\n\n" + m.list.View()
 	case stepDiffResult, stepDone:
-		v := m.message
+		return m.message + "\n\n(press enter to return to menu, esc to close session)"
+	case stepError:
+		errText := "unknown error"
 		if m.err != nil {
-			v += "\nerror: " + m.err.Error()
+			errText = m.err.Error()
 		}
-		return v + "\n\n(press enter to return to menu, esc to close session)"
+		return "ERROR:\n\n" + errText + "\n\n(press enter to return to menu, esc to close session)"
 	default:
 		return fmt.Sprintf("%s\n\n%s\n\n(enter = confirm, esc = back to menu/close session)",
 			m.stepPrompt(), m.input.View())

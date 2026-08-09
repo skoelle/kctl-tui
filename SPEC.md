@@ -75,9 +75,9 @@ Once start navigation is complete, the tool opens a tmux session with
 |  -> runs the kctl-tui binary in "panel" mode      |
 |  -> menu: Redeploy, secrets diff                  |
 +--------------------------------------------------+
-|  Pane 1 (middle): k9s --context <context-a> -n <ns>|
+|  Pane 1 (middle): k9s --context <context-a> --namespace <ns> --command pods|
 +--------------------------------------------------+
-|  Pane 2 (bottom): k9s --context <context-b> -n <ns>|
+|  Pane 2 (bottom): k9s --context <context-b> --namespace <ns> --command pods|
 +--------------------------------------------------+
 ```
 
@@ -94,8 +94,8 @@ tmux kill-session -t kctl
 tmux new-session -d -s kctl \
   "kctl-tui panel --context=$CTX_A --ns=$NS --team=$TEAM" \; \
   set-option -t kctl remain-on-exit on \; \
-  split-window -v -t kctl:0.0 "k9s --context $CTX_A -n $NS" \; \
-  split-window -v -t kctl:0.1 "k9s --context $CTX_B -n $NS" \; \
+  split-window -v -t kctl:0.0 "k9s --context $CTX_A --namespace $NS --command pods" \; \
+  split-window -v -t kctl:0.1 "k9s --context $CTX_B --namespace $NS --command pods" \; \
   select-layout -t kctl even-vertical \; \
   select-pane -t kctl:0.0 \; \
   attach -t kctl

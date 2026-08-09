@@ -278,7 +278,7 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 
 	envA := m.cfg.Envs[0]
 	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
-	k9sCmdA := fmt.Sprintf("k9s --context %s -n %s", ctxA, m.selectedNamespace)
+	k9sCmdA := fmt.Sprintf("k9s --context %s --namespace %s --command pods", ctxA, m.selectedNamespace)
 
 	kubeexec.VerboseLog("[debug] selfPath=%s\n", selfPath)
 	kubeexec.VerboseLog("[debug] panelCmd=%s\n", panelCmd)
@@ -297,7 +297,7 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 	if len(m.cfg.Envs) > 1 {
 		envB := m.cfg.Envs[1]
 		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
-		k9sCmdB := fmt.Sprintf("k9s --context %s -n %s", ctxB, m.selectedNamespace)
+		k9sCmdB := fmt.Sprintf("k9s --context %s --namespace %s --command pods", ctxB, m.selectedNamespace)
 		kubeexec.VerboseLog("[debug] k9sCmdB=%s\n", k9sCmdB)
 		setup = append(setup, []string{"split-window", "-v", "-t", "kctl:0.1", k9sCmdB})
 	}

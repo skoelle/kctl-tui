@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 
@@ -265,7 +266,10 @@ func (m *fullModel) loadNamespacesFor(teamValue string) tea.Cmd {
 // configured envs, resolved via the context template, so both are
 // visible side by side.
 func (m *fullModel) startTmuxSession() tea.Cmd {
-	selfPath := "kctl-tui"
+	selfPath, err := os.Executable()
+	if err != nil {
+		selfPath = "kctl-tui" // fallback to PATH lookup
+	}
 	panelCmd := fmt.Sprintf("%s panel --context=%s --ns=%s --team=%s",
 		selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)
 

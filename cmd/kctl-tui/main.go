@@ -18,6 +18,7 @@ func main() {
 
 	// Extract global flags before delegating to sub-commands.
 	verbose := false
+	showHelp := false
 	filtered := make([]string, 0, len(args))
 	for _, a := range args {
 		switch a {
@@ -26,12 +27,21 @@ func main() {
 		case "--version", "-v":
 			fmt.Printf("kctl-tui %s\n", version)
 			return
+		case "--help", "-h":
+			showHelp = true
 		default:
 			filtered = append(filtered, a)
 		}
 	}
 	if verbose {
 		kubeexec.SetVerbose(true, os.Stderr)
+	}
+
+	if showHelp || len(filtered) == 0 {
+		printUsage()
+		if showHelp && len(filtered) == 0 {
+			return
+		}
 	}
 
 	if len(filtered) > 0 {
@@ -63,6 +73,28 @@ func main() {
 		fmt.Fprintln(os.Stderr, "kctl-tui error:", err)
 		os.Exit(1)
 	}
+}
+
+func printUsage() {
+	fmt.Print(`kctl-tui — Kubernetes entry-point TUI
+
+Usage:
+  kctl-tui [flags]             start the TUI (full navigation mode)
+  kctl-tui doctor              check tools, config and connections
+  kctl-tui config check        validate ~/.kctl-tui/config.yaml
+  kctl-tui panel [options]     control pane (called internally by tmux)
+
+Flags:
+  --verbose    log all kubectl/aws commands to stderr
+  --version    print version
+  --help       show this help
+
+Examples:
+  kctl-tui                          # start the TUI
+  kctl-tui doctor                   # verify everything is installed
+  kctl-tui --verbose 2>debug.log    # log commands to a file
+  kctl-tui config check             # validate config
+`)
 }
 
 func runConfig(args []string) error {

@@ -203,6 +203,7 @@ ln -s /mnt/c/Users/<your-windows-username>/.kube/config ~/.kube/config
 
 ```bash
 kctl-tui                    # start the TUI (full navigation mode)
+kctl-tui --help             # show all commands and flags
 kctl-tui --version          # print version
 kctl-tui --verbose          # enable debug logging to stderr
 kctl-tui doctor             # check if all tools, config and connections are OK

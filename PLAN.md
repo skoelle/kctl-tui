@@ -79,6 +79,34 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 
 ---
 
+## Bugfix Sprint — between v0.2.0 and v0.3.0
+
+- [ ] **Dead code** `cmd/kctl-tui/main.go:47-49` — empty
+      `if len(filtered) == 0` block with comment. Remove.
+- [ ] **Redundant logic** `internal/kctl/diff.go:60-63` —
+      `if lb || rb { match = l == r }` is identical to the line above.
+      Either dead or misunderstood.
+- [ ] **Diff-scroll is a no-op** `cmd/kctl-tui/panel.go:398-413` —
+      `renderDiffTable` is always called with `visibleHeight=0`, so
+      `end = len(entries)` is always true. j/k/arrows only change the
+      offset text but the table is always fully rendered. The CHANGELOG
+      promises "Diff table scroll support" but the feature is incomplete.
+- [ ] **README duplicate** `README.md:98-102` — "This downloads the latest
+      release binary..." appears twice (once "to your PATH", once
+      "to /usr/local/bin"). Edit leftover.
+- [ ] **go mod tidy in CI** `build.yml` — mutates `go.sum` during the
+      build instead of enforcing a tidy check. If someone forgets to tidy,
+      it's silently fixed instead of blocking the PR.
+- [ ] **Bubbles filter disabled** `full.go:53`, `panel.go:87` — workaround
+      for the stuck-filter bug (commit 7db58b6). Users can no longer
+      type-to-filter. Worth restoring with a proper fix later.
+- [ ] **Kleinkram:**
+  - `fmt.Errorf("%s", msg)` → `errors.New(msg)` in `kubeexec.go:41`
+  - `helpers.go` is a pointless 1:1 passthrough to the `kctl` package
+  - `IsBinary` also marks UTF-8 special chars (>0x7F) as "binary"
+
+---
+
 ## Roadmap
 
 ### v0.3.0 — client-go integration

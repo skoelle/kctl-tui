@@ -27,7 +27,6 @@ const (
 	stepRedeployList
 	stepRedeployConfirm
 	stepAWSAuthPrompt
-	stepK8sSecretName
 	stepDiffResult
 	stepForceSyncConfirm
 	stepExternalSecretName
@@ -47,11 +46,10 @@ type panelModel struct {
 
 	deploymentName string
 
-	awsSecretID   string
-	awsValues     map[string]string
-	k8sSecretName string
-	k8sValues     map[string]string
-	diffEntries   []kctl.SecretDiffEntry
+	secretName  string // computed from secret_name_template, used for both AWS and Kubernetes lookups
+	awsValues   map[string]string
+	k8sValues   map[string]string
+	diffEntries []kctl.SecretDiffEntry
 
 	message string
 	err      error
@@ -155,11 +153,7 @@ func (m *panelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *panelModel) usesTextInput() bool {
-	switch m.step {
-	case stepK8sSecretName, stepExternalSecretName:
-		return true
-	}
-	return false
+	return m.step == stepExternalSecretName
 }
 
 // handleEsc navigates one level up: action menu -> env menu, most
@@ -192,9 +186,6 @@ func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 		return m.fromRedeployConfirm()
 	case stepAWSAuthPrompt:
 		return m.fromAWSAuthPrompt()
-	case stepK8sSecretName:
-		m.k8sSecretName = m.input.Value()
-		return m.compareAllFields()
 	case stepForceSyncConfirm:
 		return m.fromForceSyncConfirm()
 	case stepExternalSecretName:
@@ -296,14 +287,16 @@ func (m *panelModel) afterAWSLogin(execErr error) (tea.Model, tea.Cmd) {
 	return m.startSecretsFlow()
 }
 
-// startSecretsFlow computes the AWS secret ID from the configured
-// template (namespace + env) and fetches it directly - no more listing
-// secrets or asking for a region, both now driven by config.
+// startSecretsFlow computes the secret name from the configured template
+// (namespace + env) and uses it for both the AWS Secrets Manager lookup
+// and the Kubernetes secret lookup - no manual input required for either
+// side.
 func (m *panelModel) startSecretsFlow() (tea.Model, tea.Cmd) {
-	m.awsSecretID = m.cfg.ResolveSecretName(m.ns, m.currentEnv)
-	raw, err := kubeexec.GetAWSSecretString(m.awsSecretID, m.cfg.AWSRegion)
+	m.secretName = m.cfg.ResolveSecretName(m.ns, m.currentEnv)
+
+	raw, err := kubeexec.GetAWSSecretString(m.secretName, m.cfg.AWSRegion)
 	if err != nil {
-		return m.showError(fmt.Errorf("failed to fetch AWS secret %q: %w", m.awsSecretID, err))
+		return m.showError(fmt.Errorf("failed to fetch AWS secret %q: %w", m.secretName, err))
 	}
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
@@ -316,10 +309,7 @@ func (m *panelModel) startSecretsFlow() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	m.step = stepK8sSecretName
-	m.input.SetValue("")
-	m.input.Placeholder = "Kubernetes secret name (in namespace " + m.ns + ")"
-	return m, nil
+	return m.compareAllFields()
 }
 
 func (m *panelModel) fromRedeployList() (tea.Model, tea.Cmd) {
@@ -357,16 +347,17 @@ func (m *panelModel) fromRedeployConfirm() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// compareAllFields fetches every field of the Kubernetes secret and diffs
-// it against every key of the templated AWS secret in one go.
+// compareAllFields fetches every field of the Kubernetes secret (using
+// the same computed secret name as the AWS lookup) and diffs it against
+// every key of the AWS secret in one go.
 func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
-	k8sValues, err := kubeexec.GetSecretAllFields(m.resolvedContext(), m.ns, m.k8sSecretName)
+	k8sValues, err := kubeexec.GetSecretAllFields(m.resolvedContext(), m.ns, m.secretName)
 	if err != nil {
-		return m.showError(err)
+		return m.showError(fmt.Errorf("failed to fetch Kubernetes secret %q: %w", m.secretName, err))
 	}
 	m.k8sValues = k8sValues
 	m.diffEntries = diffSecretValues(m.awsValues, m.k8sValues)
-	m.message = renderDiffTable(m.currentEnv, m.awsSecretID, m.k8sSecretName, m.diffEntries)
+	m.message = renderDiffTable(m.currentEnv, m.secretName, m.diffEntries)
 
 	if anyMismatch(m.diffEntries) {
 		m.list.SetItems([]list.Item{
@@ -381,9 +372,9 @@ func (m *panelModel) compareAllFields() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func renderDiffTable(env, awsSecretID, k8sSecretName string, entries []kctl.SecretDiffEntry) string {
+func renderDiffTable(env, secretName string, entries []kctl.SecretDiffEntry) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "env: %s   AWS secret: %s   Kubernetes secret: %s\n\n", env, awsSecretID, k8sSecretName)
+	fmt.Fprintf(&b, "env: %s   secret name (AWS + Kubernetes): %s\n\n", env, secretName)
 	fmt.Fprintf(&b, "%-25s %-20s %-20s %s\n", "KEY", "AWS", "KUBERNETES", "STATUS")
 	for _, e := range entries {
 		status := "OK"
@@ -412,7 +403,7 @@ func (m *panelModel) fromForceSyncConfirm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.step = stepExternalSecretName
-	m.input.SetValue(m.k8sSecretName)
+	m.input.SetValue(m.secretName)
 	m.input.Placeholder = "ExternalSecret object name"
 	return m, nil
 }
@@ -460,10 +451,7 @@ func (m *panelModel) View() string {
 }
 
 func (m *panelModel) stepPrompt() string {
-	switch m.step {
-	case stepK8sSecretName:
-		return fmt.Sprintf("Kubernetes secret name (env=%s, namespace=%s)", m.currentEnv, m.ns)
-	case stepExternalSecretName:
+	if m.step == stepExternalSecretName {
 		return "ExternalSecret object name to annotate"
 	}
 	return ""

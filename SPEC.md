@@ -7,9 +7,10 @@ work, bundling the most common workflows currently done via long
 `kubectl`/`k9s`/`aws-cli` commands, operable through a text UI (arrow keys,
 Esc) instead of long typed commands.
 
-Target platform: **Linux / WSL** (primary usage scenario, since split
-panes require a real terminal multiplexer). Native Windows (without WSL)
-is possible but with reduced split-view functionality (see 3.6).
+Target platform: **Linux / WSL / Windows** (primary usage scenario, since
+split panes require a real terminal multiplexer). On Windows, use
+[psmux](https://github.com/marlocarlo/psmux) as tmux-compatible
+multiplexer.
 
 **Technology decision: Go + Bubble Tea** (see section 5).
 
@@ -177,11 +178,11 @@ Alternatively, run kctl-tui inside WSL with standard `tmux`.
 
 ## 4. Non-functional requirements
 
-- **Primary platform Linux/WSL**, secondary native Windows (via psmux).
+- **Platforms**: Linux, macOS, Windows (via psmux or WSL).
 - **Single-binary distribution** without external runtime dependency (Go
   provides this natively).
-- **External dependencies**: `kubectl` mandatory; `tmux`, `k9s`, `aws-cli`
-  depending on the action used.
+- **External dependencies**: `kubectl` mandatory; `tmux`/`psmux`, `k9s`,
+  `aws-cli` depending on the action used.
 - **Low startup time**, noticeably faster than the current `kubens`
   experience.
 - **No destructive actions without confirmation** (redeploy, force-sync).
@@ -243,16 +244,14 @@ Rejected options (see discussion history):
 - These fixes are a prerequisite before the tool can be meaningfully
   tested, since it builds directly on `kubectl config`.
 
-## 8. Open items / out of scope (v1)
+## 8. Open items / out of scope
 
 - No automatic label setup for namespaces (migration is a separate,
   one-time task).
-- Split view v1 fixed at 2 status panes + 1 control pane (3 panes total).
+- Split view fixed at 2 status panes + 1 control pane (3 panes total).
 - No RBAC/permission checks before executing sensitive actions — the tool
   assumes existing kubectl permissions.
 - Configuration file format (`config.yaml`) is defined and implemented;
   concrete label keys, context names, and namespace names are
   project-specific and belong exclusively in the user's local, unversioned
   configuration, not in this document or the source code.
-- Native Windows (without WSL) remains a secondary platform with manual
-  pane handling instead of an automated tmux lifecycle.

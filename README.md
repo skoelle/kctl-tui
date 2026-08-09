@@ -42,9 +42,9 @@ See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
 |  -> 1) Quit  2) beta  3) prod                     |
 |     each with: a) Secrets sync  b) Redeploy       |
 +--------------------------------------------------+
-|  k9s --context <resolved beta context>  -n <ns>   |
+|  k9s --context <resolved beta context> --namespace <ns> --command pods   |
 +--------------------------------------------------+
-|  k9s --context <resolved prod context>  -n <ns>   |
+|  k9s --context <resolved prod context> --namespace <ns> --command pods   |
 +--------------------------------------------------+
 ```
 
@@ -94,9 +94,6 @@ curl -fsSL https://raw.githubusercontent.com/skoelle/kctl-tui/main/install.sh | 
 ```powershell
 irm https://raw.githubusercontent.com/skoelle/kctl-tui/main/install.ps1 | iex
 ```
-
-This downloads the latest release binary for your architecture from
-GitHub Releases and installs it to your PATH.
 
 This downloads the latest release binary for your OS/architecture from
 GitHub Releases and installs it to `/usr/local/bin/kctl-tui`.

@@ -125,6 +125,7 @@ aws_region: "eu-central-1"
 aws_account_id: "123456789012"
 
 secret_name_template: "tf-{namespace}-{env}-secrets"
+k8s_secret_name_template: "{namespace}-common-secrets"
 context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
 
 team_label_key: "example.org/team"
@@ -144,6 +145,10 @@ aws_sso_login_command: "aws sso login"
 - `secret_name_template`: builds the AWS Secrets Manager secret ID from
   the chosen namespace and environment. Placeholders: `{namespace}`,
   `{env}`.
+- `k8s_secret_name_template`: builds the Kubernetes secret name from the
+  chosen namespace. Kept separate from `secret_name_template` because the
+  two sides commonly follow different naming conventions. Placeholders:
+  `{namespace}`.
 - `context_template`: builds the actual kubectl context name/ARN from
   region, account ID, environment, and context. Placeholders: `{region}`,
   `{account_id}`, `{env}`, `{context}`. Adjust the literal parts (`tf-`,

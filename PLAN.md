@@ -17,15 +17,17 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 ## Phase 1 — Core logic + navigation (done, initial version)
 
 - [x] `internal/kctl`: pure, unit-tested logic —
-      context-pair matching (`FindNextContext`), namespace/label filtering
+      template resolution (`ResolveTemplate`), namespace/label filtering
       (`DistinctLabelValues`, `NamespacesForLabelValue`), and secret diffing
       (`DiffSecretValues`, `AnyMismatch`).
-- [x] `internal/config`: YAML config loading (`context_pairs`,
-      `team_label_key`), with safe defaults when no config file exists yet.
+- [x] `internal/config`: YAML config loading with template-based context
+      and secret name resolution (`ContextTemplate`, `SecretNameTemplate`,
+      `K8sSecretNameTemplate`), with safe defaults when no config file
+      exists yet.
 - [x] `internal/kubeexec`: thin wrappers around `kubectl`/`aws` CLI calls
-      (contexts, namespaces, deployments, rollout restart/status, listing
-      AWS secrets, reading all fields of a Kubernetes secret, ExternalSecret
-      annotation).
+      (namespaces, deployments, rollout restart/status, fetching AWS
+      secrets by template-resolved ID, reading all fields of a Kubernetes
+      secret, ExternalSecret annotation, AWS auth check).
 - [x] `cmd/kctl-tui` "full" mode: Bubble Tea navigation for
       context -> team -> namespace, with `Esc` correctly popping back one
       level at a time, defaults pre-selected from the currently active
@@ -38,13 +40,13 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 - [x] `cmd/kctl-tui` "panel" mode:
       - Redeploy: pick a deployment from a list, confirm, then
         `rollout restart` + `rollout status`.
-      - Secrets: pick an AWS region, then pick the actual secret from a
-        **list of all AWS Secrets Manager secrets** in that region (no more
-        manual secret-ID typing), enter the matching Kubernetes secret
-        name, and automatically diff **every field** of both secrets in one
-        table (key / AWS value / Kubernetes value / match status). If any
-        field differs, offer a single force-sync request for the **whole
-        secret** (one ExternalSecret annotation), not per individual field.
+      - Secrets: AWS auth check with interactive SSO login fallback,
+        then automatically resolve the AWS secret ID (from
+        `secret_name_template`) and Kubernetes secret name (from
+        `k8s_secret_name_template`), fetch both, diff **every field**
+        in one table (key / AWS value / Kubernetes value / match status).
+        If any field differs, offer a single force-sync request for the
+        **whole secret** (one ExternalSecret annotation).
       - `Esc` closes the whole tmux session (`tmux kill-session`).
 
 ## Phase 2 — Hardening (open)
@@ -68,9 +70,8 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 
 - [ ] Detect OS at runtime; on native Windows (no WSL), fall back to
       `wt.exe split-pane` instead of `tmux` for the status panes.
-- [ ] Document/implement that `Tab`-based context switching and
-      `Esc`-triggered session close are **not** available in the native
-      Windows fallback, per SPEC.md 3.6 — the panes must be closed
+- [ ] Document/implement that `Esc`-triggered session close is **not**
+      available in the native Windows fallback — the panes must be closed
       manually there.
 
 ## Phase 4 — Nice-to-haves (open, not committed)
@@ -82,9 +83,6 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
       kubeconfig.
 - [ ] Homebrew tap / `scoop` manifest as additional install options
       alongside `install.sh`.
-- [ ] Optional heuristic to suggest a matching Kubernetes secret name for
-      a chosen AWS secret (e.g. by common naming convention), instead of
-      always asking for it manually.
 
 ## Notes for contributors
 

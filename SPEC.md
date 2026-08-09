@@ -5,7 +5,7 @@
 A single terminal tool as the central entry point for everyday Kubernetes
 work, bundling the most common workflows currently done via long
 `kubectl`/`k9s`/`aws-cli` commands, operable through a text UI (arrow keys,
-Esc, Tab) instead of long typed commands.
+Esc) instead of long typed commands.
 
 Target platform: **Linux / WSL** (primary usage scenario, since split
 panes require a real terminal multiplexer). Native Windows (without WSL)
@@ -49,9 +49,6 @@ Navigation:
   (`tmux kill-session`, closing both k9s panes as well) and then moves the
   Go tool's screen stack one level up: namespace selection -> team
   selection -> context selection.
-- **Tab** in the control pane switches the context pair according to the
-  context-pair pattern (see 3.6) for both status panes simultaneously; the
-  namespace stays the same.
 
 ### 3.2 Namespace grouping via labels
 
@@ -64,10 +61,10 @@ Navigation:
   kubectl get ns -o jsonpath='{range .items[*]}{.metadata.labels["<team-label-key>"]}{"\n"}{end}' | sort -u
   ```
 - The actual label key is project-specific and set via the configuration
-  file (see 3.6), not hardcoded.
+  file (see `team_label_key` in config), not hardcoded.
 - Namespace labeling is a prerequisite (one-time setup outside the tool).
 
-### 3.3 Layout: 3-panel view (core design change vs. earlier drafts)
+### 3.3 Layout: 3-panel view
 
 Once start navigation is complete, the tool opens a tmux session with
 **three panes**, started with a single command:
@@ -93,10 +90,12 @@ Example startup command (generic placeholders):
 
 ```
 tmux new-session -d -s kctl \
-  "kctl-tui panel --ctx=$CTX_A --ns=$NS --team=$TEAM" \; \
-  split-window -v "k9s --context $CTX_A -n $NS" \; \
-  split-window -v "k9s --context $CTX_B -n $NS" \; \
-  select-layout main-horizontal \; \
+  "kctl-tui panel --context=$CTX_A --ns=$NS --team=$TEAM" \; \
+  set-option -t kctl remain-on-exit on \; \
+  split-window -v -t kctl:0.0 "k9s --context $CTX_A -n $NS" \; \
+  split-window -v -t kctl:0.1 "k9s --context $CTX_B -n $NS" \; \
+  select-layout -t kctl even-vertical \; \
+  select-pane -t kctl:0.0 \; \
   attach -t kctl
 ```
 
@@ -115,54 +114,66 @@ Switching between panes: `Ctrl-b` + arrow key, or `Ctrl-b` `o`.
 
 ### 3.5 AWS Secrets Manager <-> Kubernetes Secret diff — in the control pane
 
-1. Load the secret from AWS Secrets Manager:
+1. Before entering the secrets workflow, verify the AWS session is valid
+   (`aws sts get-caller-identity`). If expired, offer to run the
+   configured SSO login command interactively.
+2. Resolve the AWS Secrets Manager secret ID from `secret_name_template`
+   (using namespace + env) and the Kubernetes secret name from
+   `k8s_secret_name_template` (using namespace). No manual input required
+   for either name.
+3. Fetch the AWS secret:
    `aws secretsmanager get-secret-value --secret-id <secret-id> --region <region> --query SecretString --output text`.
-2. Show the contained keys for selection.
-3. Load the matching Kubernetes secret field:
-   `kubectl -n <ns> get secret <secret-name> -o jsonpath='{.data.<field>}'`,
-   base64-decode it.
-4. Compare the values (identical / different).
-5. On mismatch, optionally request a force-sync:
+4. Fetch all fields of the Kubernetes secret and base64-decode them:
+   `kubectl -n <ns> get secret <secret-name> -o json`.
+5. Compare every field at once in a table (key / AWS value / Kubernetes
+   value / match status).
+6. On mismatch, optionally request a force-sync for the whole secret:
    `kubectl -n <ns> annotate externalsecret <name> force-sync=<unix-timestamp> --overwrite`.
 
-All names (secret ID, secret name, field name, ExternalSecret name) are
-asked for interactively at runtime, never hardcoded in the tool.
+The ExternalSecret object name for the force-sync annotation is the only
+value asked for interactively at runtime.
 
-### 3.6 Context-pair pattern (configurable) — drives both status panes at once
+### 3.6 Context resolution via templates
 
-Requirement: the Tab switch in the control pane must switch **both**
-status panes below it, not just an internal state.
+The actual kubectl context name/ARN for each environment is computed from
+a configurable template at startup. The two k9s status panes and all
+kubectl calls in the control pane use the resolved context.
 
 Configuration format (e.g. `~/.kctl-tui/config.yaml`), purely illustrative
 with generic placeholders:
 
 ```yaml
-context_pairs:
-  - name: "environment-pair-1"
-    contexts: ["<context-a1>", "<context-a2>"]
-  - name: "environment-pair-2"
-    contexts: ["<context-b1>", "<context-b2>"]
+contexts:
+  - "internal"
+  - "external"
+default_context: "internal"
+
+envs:
+  - "beta"
+  - "prod"
+
+aws_region: "eu-central-1"
+aws_account_id: "123456789012"
+
+context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
+secret_name_template: "tf-{namespace}-{env}-secrets"
+k8s_secret_name_template: "{namespace}-common-secrets"
 
 team_label_key: "<organization>/<label-name>"
 ```
 
-Behavior on Tab in the control pane:
+The `context_template` replaces `{region}`, `{account_id}`, `{env}`, and
+`{context}` placeholders with the configured values and the currently
+selected environment/context. The resolved value must match an existing
+context in your kubeconfig (e.g. added via `aws eks update-kubeconfig`).
 
-1. Determine the current context pair from the configuration.
-2. Restart both k9s panes via
-   `tmux respawn-pane -k -t kctl:0.1 "k9s --context <newA> -n <ns>"` and
-   `... kctl:0.2 ...` (namespace stays the same).
-3. If the current context is in no configured list: show a hint in the
-   control pane instead of an error.
-4. No action outside this configuration — no error, only a hint.
-
-**Platform limitation on Windows without WSL:** `respawn-pane`/
-`kill-session` are tmux-specific. Windows Terminal (`wt.exe`) offers no
-equivalent scripting to replace panes or end the session from inside a
-pane. On plain Windows (without WSL), only a simplified flow is possible:
-k9s panes are closed manually (`q`, then `Ctrl+Shift+W`); Tab switching and
-automatic session termination are unavailable there. This limitation is
-the main reason the primary target system is set to Linux/WSL.
+**Platform limitation on Windows without WSL:** `kill-session` is
+tmux-specific. Windows Terminal (`wt.exe`) offers no equivalent scripting
+to end the session from inside a pane. On plain Windows (without WSL),
+only a simplified flow is possible: k9s panes are closed manually (`q`,
+then `Ctrl+Shift+W`); automatic session termination is unavailable there.
+This limitation is the main reason the primary target system is set to
+Linux/WSL.
 
 ## 4. Non-functional requirements
 
@@ -240,8 +251,8 @@ Rejected options (see discussion history):
 - Split view v1 fixed at 2 status panes + 1 control pane (3 panes total).
 - No RBAC/permission checks before executing sensitive actions — the tool
   assumes existing kubectl permissions.
-- Configuration file format (`config.yaml`) is a proposal, not finally
-  agreed; concrete label keys, context names, and namespace names are
+- Configuration file format (`config.yaml`) is defined and implemented;
+  concrete label keys, context names, and namespace names are
   project-specific and belong exclusively in the user's local, unversioned
   configuration, not in this document or the source code.
 - Native Windows (without WSL) remains a secondary platform with manual

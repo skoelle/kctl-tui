@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/skoelle/kctl-tui/internal/config"
 	"github.com/skoelle/kctl-tui/internal/kctl"
 	"github.com/skoelle/kctl-tui/internal/kubeexec"
 )
@@ -24,6 +25,7 @@ const (
 	stepMenu panelStep = iota
 	stepRedeployList
 	stepRedeployConfirm
+	stepAWSAuthPrompt
 	stepSecretRegion
 	stepSecretList
 	stepK8sSecretName
@@ -36,6 +38,7 @@ const (
 
 type panelModel struct {
 	ctx, ns, team string
+	cfg           config.Config
 
 	step  panelStep
 	list  list.Model
@@ -75,7 +78,10 @@ func newPanelModel(ctx, ns, team string) *panelModel {
 	ti := textinput.New()
 	ti.Focus()
 
-	return &panelModel{ctx: ctx, ns: ns, team: team, step: stepMenu, list: l, input: ti}
+	cfgPath, _ := config.DefaultPath()
+	cfg, _ := config.Load(cfgPath)
+
+	return &panelModel{ctx: ctx, ns: ns, team: team, cfg: cfg, step: stepMenu, list: l, input: ti}
 }
 
 func menuItems() []list.Item {
@@ -88,11 +94,16 @@ func menuItems() []list.Item {
 
 func (m *panelModel) Init() tea.Cmd { return nil }
 
+type awsLoginDoneMsg struct{ err error }
+
 func (m *panelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.list.SetSize(msg.Width, msg.Height-2)
 		return m, nil
+
+	case awsLoginDoneMsg:
+		return m.afterAWSLogin(msg.err)
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -139,6 +150,8 @@ func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 		return m.fromRedeployList()
 	case stepRedeployConfirm:
 		return m.fromRedeployConfirm()
+	case stepAWSAuthPrompt:
+		return m.fromAWSAuthPrompt()
 	case stepSecretRegion:
 		m.awsRegion = m.input.Value()
 		return m.fetchSecretList()
@@ -194,12 +207,60 @@ func (m *panelModel) fromMenu() (tea.Model, tea.Cmd) {
 		m.list.Title = "Select deployment to restart (esc = back)"
 		m.step = stepRedeployList
 	case "secrets":
-		m.step = stepSecretRegion
-		m.input.SetValue("eu-central-1")
-		m.input.Placeholder = "AWS region"
+		return m.checkAWSAuthAndProceed()
 	case "quit":
 		return m.handleEsc()
 	}
+	return m, nil
+}
+
+// checkAWSAuthAndProceed verifies the current AWS credentials/SSO session
+// before entering the secrets workflow. If the check fails (e.g. an
+// expired SSO session), it offers to run the configured login command
+// interactively instead of letting the user hit a confusing failure
+// several steps later.
+func (m *panelModel) checkAWSAuthAndProceed() (tea.Model, tea.Cmd) {
+	if err := kubeexec.CheckAWSAuth(); err != nil {
+		m.err = err
+		m.list.SetItems([]list.Item{
+			simpleItem{label: "Run AWS login now (" + m.cfg.LoginCommand() + ")", value: "login"},
+			simpleItem{label: "Cancel", value: "cancel"},
+		})
+		m.list.Title = "AWS session invalid or expired"
+		m.step = stepAWSAuthPrompt
+		return m, nil
+	}
+	m.step = stepSecretRegion
+	m.input.SetValue("eu-central-1")
+	m.input.Placeholder = "AWS region"
+	return m, nil
+}
+
+func (m *panelModel) fromAWSAuthPrompt() (tea.Model, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(simpleItem)
+	if !ok || item.value != "login" {
+		m.resetToMenu()
+		return m, nil
+	}
+	cmd := kubeexec.RunAWSLogin(m.cfg.LoginCommand())
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return awsLoginDoneMsg{err: err}
+	})
+}
+
+// afterAWSLogin re-checks AWS auth once the interactive login command has
+// finished (successfully or not) and either proceeds into the secrets
+// workflow or shows the remaining error.
+func (m *panelModel) afterAWSLogin(execErr error) (tea.Model, tea.Cmd) {
+	if execErr != nil {
+		return m.showError(fmt.Errorf("login command failed to run: %w", execErr))
+	}
+	if err := kubeexec.CheckAWSAuth(); err != nil {
+		return m.showError(fmt.Errorf("still not authenticated with AWS after running '%s': %w", m.cfg.LoginCommand(), err))
+	}
+	m.step = stepSecretRegion
+	m.input.SetValue("eu-central-1")
+	m.input.Placeholder = "AWS region"
 	return m, nil
 }
 
@@ -363,6 +424,12 @@ func (m *panelModel) View() string {
 	switch m.step {
 	case stepMenu, stepRedeployList, stepRedeployConfirm, stepSecretList:
 		return m.list.View()
+	case stepAWSAuthPrompt:
+		errText := ""
+		if m.err != nil {
+			errText = m.err.Error() + "\n\n"
+		}
+		return errText + m.list.View()
 	case stepForceSyncConfirm:
 		return m.message + "\n\n" + m.list.View()
 	case stepDiffResult, stepDone:

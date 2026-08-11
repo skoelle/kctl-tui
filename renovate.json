@@ -5,13 +5,29 @@
   "packageRules": [
     {
       "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions",
       "automerge": true
     },
     {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "GitHub Actions (major)",
+      "labels": ["major-update"],
+      "automerge": false
+    },
+    {
       "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Go dependencies",
       "automerge": true
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Go dependencies (major)",
+      "labels": ["major-update"],
+      "automerge": false
     },
     {
       "matchUpdateTypes": ["minor", "patch"],

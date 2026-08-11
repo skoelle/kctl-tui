@@ -29,7 +29,8 @@ Create a release tag and push it to origin. The GitHub Action will automatically
 5. Create annotated tag on that commit:
    - Run `git tag -a v$ARGUMENTS -m "Release v$ARGUMENTS"`
 
-6. Push commit and tag:
-   - Run `git push origin main --tags` (or current branch)
+6. Push commit and tag separately (pushing both in one step causes GitHub Actions to skip the release workflow):
+   - Run `git push origin main` (or current branch)
+   - Run `git push origin v$ARGUMENTS`
 
 7. Confirm success with the version number

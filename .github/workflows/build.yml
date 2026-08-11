@@ -75,6 +75,20 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Extract release notes from commit message
+        id: release
+        run: |
+          MSG=$(git log -1 --pretty=format:"%B" "${{ github.sha }}")
+          {
+            echo 'body<<EOF'
+            echo "$MSG"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -83,5 +97,5 @@ jobs:
       - name: Create release and upload binaries
         uses: softprops/action-gh-release@v3
         with:
+          body: ${{ steps.release.outputs.body }}
           files: dist/*
-          generate_release_notes: true

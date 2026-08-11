@@ -29,6 +29,8 @@ func main() {
 			verbose = true
 		case "--version", "-v":
 			fmt.Printf("kctl-tui %s\n", version)
+			fmt.Println("Copyright (c) 2026 Stefan Koelle (https://stefankoelle.de)")
+			fmt.Println("Licensed under the MIT License")
 			return
 		case "--help", "-h":
 			showHelp = true
@@ -85,6 +87,7 @@ func main() {
 
 func printUsage() {
 	fmt.Print(`kctl-tui — Kubernetes entry-point TUI
+https://github.com/skoelle/kctl-tui
 
 Usage:
   kctl-tui [flags]             start the TUI (full navigation mode)

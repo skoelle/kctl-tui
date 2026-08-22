@@ -83,7 +83,9 @@ func main() {
 		}
 	}
 
-	checkForUpdateInteractive(verbose)
+	if checkForUpdateInteractive(verbose) {
+		os.Exit(0)
+	}
 
 	m := newFullModel()
 	p := tea.NewProgram(m, tea.WithAltScreen())

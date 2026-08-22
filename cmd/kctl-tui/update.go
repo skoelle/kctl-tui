@@ -7,48 +7,77 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/creativeprojects/go-selfupdate"
 )
 
-const githubSlug = "skoelle/kctl-tui"
+const (
+	githubSlug    = "skoelle/kctl-tui"
+	updateTimeout = 10 * time.Second
+)
 
-func runUpdate(verbose bool) error {
+func initUpdater(verbose bool) (*selfupdate.Updater, error) {
 	if verbose {
 		selfupdate.SetLogger(&verboseLogger{})
 	}
 
-	current := version
-	if current == "dev" {
+	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to init GitHub source: %w", err)
+	}
+
+	return selfupdate.NewUpdater(selfupdate.Config{
+		Source: source,
+	})
+}
+
+func runUpdate(verbose bool) error {
+	if version == "dev" {
 		fmt.Fprintln(os.Stderr, "WARNING: running dev build — cannot compare versions")
-		fmt.Println("Skipping version check. Build from a tagged release to enable self-update.")
+		fmt.Fprintln(os.Stderr, "Skipping version check. Build from a tagged release to enable self-update.")
 		return nil
 	}
 
-	fmt.Printf("Current version: %s\n", current)
-	fmt.Println("Checking for updates...")
+	updater, err := initUpdater(verbose)
+	if err != nil {
+		return err
+	}
 
-	rel, err := detectLatest()
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+
+	repo := selfupdate.ParseSlug(githubSlug)
+	rel, found, err := updater.DetectLatest(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("failed to check for updates: %w", err)
 	}
-
-	if rel == nil {
+	if !found {
 		fmt.Println("Already up-to-date.")
 		return nil
 	}
 
-	fmt.Printf("Found version %s. Updating...\n", rel.Version())
+	current, _ := semver.NewVersion(version)
+	newVersion := rel.Version()
 
-	if err := applyUpdate(rel); err != nil {
+	newVer, _ := semver.NewVersion(newVersion)
+
+	if current != nil && !current.LessThan(newVer) {
+		fmt.Println("Already up-to-date.")
+		return nil
+	}
+
+	fmt.Printf("Current version: %s\n", version)
+	fmt.Printf("Found version %s. Updating...\n", newVersion)
+
+	if err := updater.UpdateTo(ctx, rel, ""); err != nil {
 		return fmt.Errorf("update failed: %w", err)
 	}
 
-	fmt.Printf("Updated from %s to %s\n", current, rel.Version())
+	fmt.Printf("Updated from %s to %s\n", current, newVersion)
 	return nil
 }
 
@@ -59,27 +88,34 @@ func checkForUpdateInteractive(verbose bool) bool {
 		return false
 	}
 
-	if verbose {
-		selfupdate.SetLogger(&verboseLogger{})
-	}
-
-	rel, err := detectLatest()
+	updater, err := initUpdater(verbose)
 	if err != nil {
-		// Silently ignore network errors — don't block startup
 		if verbose {
 			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
 		}
 		return false
 	}
 
-	if rel == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
+	defer cancel()
+
+	repo := selfupdate.ParseSlug(githubSlug)
+	rel, found, err := updater.DetectLatest(ctx, repo)
+	if err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+		}
+		return false
+	}
+	if !found {
 		return false
 	}
 
 	current, _ := semver.NewVersion(version)
 	newVersion := rel.Version()
+	newVer, _ := semver.NewVersion(newVersion)
 
-	if current != nil && !rel.GreaterThan(current.String()) {
+	if current != nil && !current.LessThan(newVer) {
 		return false
 	}
 
@@ -94,54 +130,13 @@ func checkForUpdateInteractive(verbose bool) bool {
 	}
 
 	fmt.Println("Updating...")
-	if err := applyUpdate(rel); err != nil {
+	if err := updater.UpdateTo(ctx, rel, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
 		return false
 	}
 
-	fmt.Printf("Updated to %s. Starting kctl-tui...\n", newVersion)
+	fmt.Printf("Updated to %s. Please restart kctl-tui.\n", newVersion)
 	return true
-}
-
-func detectLatest() (*selfupdate.Release, error) {
-	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to init GitHub source: %w", err)
-	}
-
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Source: source,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create updater: %w", err)
-	}
-
-	repo := selfupdate.ParseSlug(githubSlug)
-	rel, found, err := updater.DetectLatest(context.Background(), repo)
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return nil, nil
-	}
-
-	return rel, nil
-}
-
-func applyUpdate(rel *selfupdate.Release) error {
-	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
-	if err != nil {
-		return fmt.Errorf("failed to init GitHub source: %w", err)
-	}
-
-	updater, err := selfupdate.NewUpdater(selfupdate.Config{
-		Source: source,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create updater: %w", err)
-	}
-
-	return updater.UpdateTo(context.Background(), rel, "")
 }
 
 type verboseLogger struct{}
@@ -152,8 +147,4 @@ func (l *verboseLogger) Print(v ...any) {
 
 func (l *verboseLogger) Printf(format string, v ...any) {
 	fmt.Fprintf(os.Stderr, format, v...)
-}
-
-func init() {
-	log.SetOutput(os.Stderr)
 }

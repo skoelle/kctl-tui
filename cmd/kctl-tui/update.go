@@ -13,6 +13,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/creativeprojects/go-selfupdate"
+	"golang.org/x/term"
 )
 
 const (
@@ -85,6 +86,10 @@ func runUpdate(verbose bool) error {
 // Returns true if an update was applied.
 func checkForUpdateInteractive(verbose bool) bool {
 	if version == "dev" {
+		return false
+	}
+
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return false
 	}
 

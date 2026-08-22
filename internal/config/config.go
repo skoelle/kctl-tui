@@ -62,6 +62,19 @@ type Config struct {
 	// AWSSSOLoginCommand is run interactively if an AWS auth check fails
 	// before the secrets workflow (e.g. an expired SSO session).
 	AWSSSOLoginCommand string `yaml:"aws_sso_login_command"`
+
+	// AutoUpdateCheck controls whether kctl-tui checks for updates on
+	// startup. Defaults to true when omitted.
+	AutoUpdateCheck *bool `yaml:"auto_update_check"`
+}
+
+// IsAutoUpdateCheckEnabled returns true unless the user has explicitly set
+// auto_update_check to false in their config.
+func (c Config) IsAutoUpdateCheckEnabled() bool {
+	if c.AutoUpdateCheck == nil {
+		return true
+	}
+	return *c.AutoUpdateCheck
 }
 
 // LoginCommand returns the configured AWS SSO login command, falling back

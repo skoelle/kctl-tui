@@ -83,8 +83,18 @@ func main() {
 		}
 	}
 
-	if checkForUpdateInteractive(verbose) {
-		os.Exit(0)
+	// Load config early to check auto_update_update and validate.
+	cfgPath, err := config.DefaultPath()
+	if err == nil {
+		cfg, cfgErr := config.Load(cfgPath)
+		if cfgErr != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: failed to load config: %v\n", cfgErr)
+		}
+		if cfgErr == nil && cfg.IsAutoUpdateCheckEnabled() {
+			if checkForUpdateInteractive(verbose) {
+				os.Exit(0)
+			}
+		}
 	}
 
 	m := newFullModel()

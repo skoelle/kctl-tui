@@ -13,7 +13,7 @@ go mod download
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.25+
 - kubectl, k9s, tmux (or psmux on Windows)
 - An active Kubernetes cluster for integration testing
 

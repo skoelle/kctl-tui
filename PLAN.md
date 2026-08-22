@@ -77,6 +77,14 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
 - [x] `--help` flag with full usage documentation.
 - [x] CHANGELOG.md, CONTRIBUTING.md, GitHub Issue/PR templates.
 
+## Phase 5 — Self-update (done)
+
+- [x] `kctl-tui update` — self-update command using `go-selfupdate` library.
+      Downloads the matching OS/arch asset from GitHub Releases and replaces
+      the running binary atomically.
+- [x] Interactive update check on startup — queries GitHub Releases in the
+      background, prompts the user to update when a newer version is found.
+
 ---
 
 ## Bugfix Sprint — between v0.2.0 and v0.3.0

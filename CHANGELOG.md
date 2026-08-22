@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- `kctl-tui update` — self-update command that downloads the latest release
+  from GitHub and replaces the running binary
+- Automatic update check on startup — prompts to update interactively when
+  a newer version is available
+
 ## [0.2.0] - 2026-08-09
 
 ### Added

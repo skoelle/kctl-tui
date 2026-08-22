@@ -83,6 +83,8 @@ func main() {
 		}
 	}
 
+	checkForUpdateInteractive(verbose)
+
 	m := newFullModel()
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {

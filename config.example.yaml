@@ -60,3 +60,7 @@ team_label_key: "example.org/team"
 # wraps SSO login in a custom script or needs a specific --profile, e.g.:
 #   aws_sso_login_command: "aws sso login --profile my-profile"
 aws_sso_login_command: "aws sso login"
+
+# Check for updates on startup and prompt to update if a newer version is
+# available. Set to false to disable. Defaults to true if omitted.
+# auto_update_check: true

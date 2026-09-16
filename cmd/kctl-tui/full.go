@@ -47,7 +47,7 @@ type fullModel struct {
 }
 
 func newFullModel() *fullModel {
-	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	l := list.New(nil, newCompactDelegate(), 0, 0)
 	l.Title = "kctl-tui"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
@@ -210,23 +210,21 @@ func (m *fullModel) handleSelect() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// bootstrapContext resolves a kubectl context purely to discover
-// namespaces/labels for the team/namespace screens. The first configured
-// env is used as a stable default for this discovery step, since
-// namespace names are assumed to be identical across envs.
-func (m *fullModel) bootstrapContext() string {
-	if len(m.cfg.Envs) == 0 {
-		return ""
-	}
-	return m.cfg.ResolveContext(m.cfg.Envs[0], m.selectedContext)
-}
-
 func (m *fullModel) loadTeams() tea.Msg {
-	namespaces, err := kubeexec.GetNamespacesWithLabels(m.bootstrapContext())
-	if err != nil {
-		return errMsg{err}
+	merged := map[string]map[string]string{}
+	for _, env := range m.cfg.Envs {
+		ctx := m.cfg.ResolveContext(env, m.selectedContext)
+		namespaces, err := kubeexec.GetNamespacesWithLabels(ctx)
+		if err != nil {
+			continue
+		}
+		for ns, labels := range namespaces {
+			if _, exists := merged[ns]; !exists {
+				merged[ns] = labels
+			}
+		}
 	}
-	return *toTeamsLoadedMsg(namespaces, m.cfg.TeamLabelKey)
+	return *toTeamsLoadedMsg(merged, m.cfg.TeamLabelKey)
 }
 
 func (m *fullModel) loadTeamsFor(namespaces map[string]map[string]string) tea.Cmd {

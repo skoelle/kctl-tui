@@ -83,7 +83,7 @@ func newPanelModel(context, ns, team string) *panelModel {
 	cfgPath, _ := config.DefaultPath()
 	cfg, loadErr := config.Load(cfgPath)
 
-	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
+	l := list.New(nil, newCompactDelegate(), 0, 0)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
 

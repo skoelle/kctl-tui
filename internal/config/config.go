@@ -73,6 +73,11 @@ type Config struct {
 	// AutoUpdateCheck controls whether kctl-tui checks for updates on
 	// startup. Defaults to true when omitted.
 	AutoUpdateCheck *bool `yaml:"auto_update_check"`
+
+	// Multiplexer selects the terminal multiplexer for the session.
+	// "tmux" (default) uses tmux/psmux. "wt" uses Windows Terminal's
+	// native split-pane (only effective on Windows).
+	Multiplexer string `yaml:"multiplexer"`
 }
 
 // IsAutoUpdateCheckEnabled returns true unless the user has explicitly set
@@ -82,6 +87,15 @@ func (c Config) IsAutoUpdateCheckEnabled() bool {
 		return true
 	}
 	return *c.AutoUpdateCheck
+}
+
+// MultiplexerBackend returns the configured multiplexer backend,
+// falling back to "tmux" if not set.
+func (c Config) MultiplexerBackend() string {
+	if c.Multiplexer == "" {
+		return "tmux"
+	}
+	return c.Multiplexer
 }
 
 // LoginCommand returns the configured AWS SSO login command, falling back

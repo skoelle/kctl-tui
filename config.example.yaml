@@ -72,3 +72,8 @@ aws_sso_login_command: "aws sso login"
 # Check for updates on startup and prompt to update if a newer version is
 # available. Set to false to disable. Defaults to true if omitted.
 # auto_update_check: true
+
+# Terminal multiplexer backend. "tmux" (default) uses tmux/psmux.
+# "wt" uses Windows Terminal's native split-pane — avoids the psmux
+# focus-freeze issue on Windows. Only effective on Windows.
+# multiplexer: "tmux"

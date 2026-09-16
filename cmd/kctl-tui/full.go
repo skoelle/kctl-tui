@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -197,7 +198,11 @@ func (m *fullModel) handleSelect() (tea.Model, tea.Cmd) {
 
 	case screenNamespace:
 		m.selectedNamespace = item.value
-		if err := kubeexec.CheckTool("tmux"); err != nil {
+		tool := "tmux"
+		if runtime.GOOS == "windows" && m.cfg.MultiplexerBackend() == "wt" {
+			tool = "wt"
+		}
+		if err := kubeexec.CheckTool(tool); err != nil {
 			m.err = err
 			return m, nil
 		}
@@ -262,12 +267,21 @@ func (m *fullModel) loadNamespacesFor(teamValue string) tea.Cmd {
 	}
 }
 
-// startTmuxSession builds the 3-pane tmux command: the control pane runs
+// startTmuxSession builds the 3-pane session: the control pane runs
 // this binary in "panel" mode (letting the user pick an env and an
 // action), and the two status panes run k9s against the first two
 // configured envs, resolved via the context template, so both are
-// visible side by side.
+// visible side by side. On Windows with multiplexer: "wt", this uses
+// Windows Terminal's native split-pane instead of tmux/psmux.
 func (m *fullModel) startTmuxSession() tea.Cmd {
+	if runtime.GOOS == "windows" && m.cfg.MultiplexerBackend() == "wt" {
+		return m.startWtSession()
+	}
+	return m.startTmuxSessionTmux()
+}
+
+// startTmuxSessionTmux creates the session using tmux/psmux.
+func (m *fullModel) startTmuxSessionTmux() tea.Cmd {
 	selfPath, err := os.Executable()
 	if err != nil {
 		selfPath = "kctl-tui" // fallback to PATH lookup
@@ -314,6 +328,40 @@ func (m *fullModel) startTmuxSession() tea.Cmd {
 
 	// Only attach uses tea.ExecProcess so it takes over the terminal.
 	c := exec.Command("tmux", "attach", "-t", "kctl")
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return tmuxDoneMsg{err: err}
+	})
+}
+
+// startWtSession creates the session using Windows Terminal's native
+// split-pane feature. This avoids the psmux focus-freeze issue on Windows.
+func (m *fullModel) startWtSession() tea.Cmd {
+	selfPath, err := os.Executable()
+	if err != nil {
+		selfPath = "kctl-tui"
+	}
+	panelCmd := fmt.Sprintf("%s panel --context=%s --ns=%s --team=%s",
+		selfPath, m.selectedContext, m.selectedNamespace, m.selectedTeam)
+
+	envA := m.cfg.Envs[0]
+	ctxA := m.cfg.ResolveContext(envA, m.selectedContext)
+	k9sCmdA := fmt.Sprintf("k9s --context %s --namespace %s --command pods", ctxA, m.selectedNamespace)
+
+	kubeexec.VerboseLog("[debug] selfPath=%s\n", selfPath)
+	kubeexec.VerboseLog("[debug] panelCmd=%s\n", panelCmd)
+	kubeexec.VerboseLog("[debug] k9sCmdA=%s\n", k9sCmdA)
+
+	args := []string{"new-tab", panelCmd, ";", "split-pane", "-V", k9sCmdA}
+
+	if len(m.cfg.Envs) > 1 {
+		envB := m.cfg.Envs[1]
+		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
+		k9sCmdB := fmt.Sprintf("k9s --context %s --namespace %s --command pods", ctxB, m.selectedNamespace)
+		kubeexec.VerboseLog("[debug] k9sCmdB=%s\n", k9sCmdB)
+		args = append(args, ";", "split-pane", "-V", k9sCmdB)
+	}
+
+	c := exec.Command("wt", args...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return tmuxDoneMsg{err: err}
 	})

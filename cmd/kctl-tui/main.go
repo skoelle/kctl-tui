@@ -6,6 +6,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -113,6 +116,7 @@ Usage:
   kctl-tui [flags]             start the TUI (full navigation mode)
   kctl-tui doctor              check tools, config and connections
   kctl-tui update              update to the latest release
+  kctl-tui config edit         open ~/.kctl-tui/config.yaml in editor
   kctl-tui config check        validate ~/.kctl-tui/config.yaml
   kctl-tui panel [options]     control pane (called internally by tmux)
 
@@ -126,14 +130,56 @@ Examples:
   kctl-tui doctor                   # verify everything is installed
   kctl-tui update                   # update to the latest version
   kctl-tui --verbose 2>debug.log    # log commands to a file
+  kctl-tui config edit              # open config in editor
   kctl-tui config check             # validate config
 `)
 }
 
 func runConfig(args []string) error {
-	if len(args) == 0 || args[0] != "check" {
-		return fmt.Errorf("usage: kctl-tui config check")
+	if len(args) > 0 && args[0] == "check" {
+		return runConfigCheck()
 	}
+	if len(args) == 0 || args[0] == "edit" {
+		return runConfigEdit()
+	}
+	return fmt.Errorf("usage: kctl-tui config [check|edit]")
+}
+
+func runConfigEdit() error {
+	cfgPath, err := config.DefaultPath()
+	if err != nil {
+		return fmt.Errorf("cannot determine config path: %w", err)
+	}
+	dir := filepath.Dir(cfgPath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("cannot create config directory %s: %w", dir, err)
+	}
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		if err := os.WriteFile(cfgPath, []byte("# kctl-tui configuration\n# See https://github.com/skoelle/kctl-tui for examples.\n"), 0o600); err != nil {
+			return fmt.Errorf("cannot create config file %s: %w", cfgPath, err)
+		}
+		fmt.Printf("Created new config file: %s\n", cfgPath)
+	}
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		switch runtime.GOOS {
+		case "windows":
+			editor = "notepad"
+		default:
+			editor = "vim"
+		}
+	}
+	cmd := exec.Command(editor, cfgPath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func runConfigCheck() error {
 	cfgPath, err := config.DefaultPath()
 	if err != nil {
 		return fmt.Errorf("cannot determine config path: %w", err)

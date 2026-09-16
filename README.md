@@ -119,7 +119,8 @@ matching asset from the [Releases page](https://github.com/skoelle/kctl-tui/rele
 ## ⚙️ Configuration
 
 Copy [config.example.yaml](config.example.yaml) to `~/.kctl-tui/config.yaml`
-and adjust it to your own setup:
+and adjust it to your own setup — or use `kctl-tui config edit` to open the
+file directly in your editor (creates the file and directory if needed):
 
 ```yaml
 contexts:
@@ -136,6 +137,7 @@ aws_account_id: "123456789012"
 
 secret_name_template: "tf-{namespace}-{env}-secrets"
 k8s_secret_name_template: "{namespace}-common-secrets"
+external_secret_name_template: "{namespace}"
 context_template: "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1"
 
 team_label_key: "example.org/team"
@@ -159,6 +161,12 @@ aws_sso_login_command: "aws sso login"
   chosen namespace. Kept separate from `secret_name_template` because the
   two sides commonly follow different naming conventions. Placeholders:
   `{namespace}`.
+- 🎯 `external_secret_name_template`: builds the ExternalSecret CRD object
+  name to annotate when a force-sync is requested. This is often different
+  from the Kubernetes secret name because the ExternalSecret CRD and the
+  resulting Secret are separate objects (e.g. ExternalSecret `"job-apply"`
+  produces Secret `"job-apply-common-secrets"`). Falls back to
+  `k8s_secret_name_template` if omitted. Placeholders: `{namespace}`.
 - 🔗 `context_template`: builds the actual kubectl context name/ARN from
   region, account ID, environment, and context. Placeholders: `{region}`,
   `{account_id}`, `{env}`, `{context}`. Adjust the literal parts (`tf-`,
@@ -205,6 +213,7 @@ kctl-tui --version          # print version
 kctl-tui --verbose          # enable debug logging to stderr
 kctl-tui update             # update to the latest release
 kctl-tui doctor             # check if all tools, config and connections are OK
+kctl-tui config edit        # open ~/.kctl-tui/config.yaml in your editor
 kctl-tui config check       # validate ~/.kctl-tui/config.yaml
 kctl-tui panel --context=... --ns=... --team=...   # internal (called by tmux)
 ```

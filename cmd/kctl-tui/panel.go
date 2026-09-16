@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,11 @@ type panelModel struct {
 	err      error
 }
 
+// isWtMode returns true when running on Windows with multiplexer: "wt".
+func (m *panelModel) isWtMode() bool {
+	return runtime.GOOS == "windows" && m.cfg.MultiplexerBackend() == "wt"
+}
+
 func runPanel(args []string) error {
 	fs := flag.NewFlagSet("panel", flag.ContinueOnError)
 	context := fs.String("context", "", "context (e.g. internal/external)")
@@ -99,7 +105,9 @@ func newPanelModel(context, ns, team string) *panelModel {
 
 func (m *panelModel) showEnvMenu() {
 	items := make([]list.Item, 0, len(m.cfg.Envs)+1)
-	items = append(items, simpleItem{label: "Quit (closes this tmux session)", value: "quit"})
+	if !m.isWtMode() {
+		items = append(items, simpleItem{label: "Quit (closes this tmux session)", value: "quit"})
+	}
 	for _, env := range m.cfg.Envs {
 		items = append(items, simpleItem{label: env, value: env})
 	}
@@ -179,10 +187,14 @@ func (m *panelModel) usesTextInput() bool {
 // handleEsc navigates one level up: action menu -> env menu, most
 // sub-steps -> action menu. From the top-level env menu it closes the
 // whole tmux session (all panes, including the two k9s status panes)
-// before quitting this program, per SPEC.md 3.6.
+// before quitting this program, per SPEC.md 3.6. In wt mode, Esc on
+// the env menu does nothing — the user closes the wt window manually.
 func (m *panelModel) handleEsc() (tea.Model, tea.Cmd) {
 	switch m.step {
 	case stepEnvMenu:
+		if m.isWtMode() {
+			return m, nil
+		}
 		exec.Command("tmux", "kill-session", "-t", "kctl").Run()
 		return m, tea.Quit
 	case stepActionMenu:

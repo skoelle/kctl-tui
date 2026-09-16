@@ -50,6 +50,13 @@ type Config struct {
 	// naming conventions.
 	K8sSecretNameTemplate string `yaml:"k8s_secret_name_template"`
 
+	// ExternalSecretNameTemplate builds the ExternalSecret CRD object
+	// name that should be annotated when a force-sync is requested. This
+	// is often different from the Kubernetes secret name because the
+	// ExternalSecret CRD and the resulting Secret are separate objects.
+	// Falls back to K8sSecretNameTemplate if empty.
+	ExternalSecretNameTemplate string `yaml:"external_secret_name_template"`
+
 	// ContextTemplate builds the actual kubectl context name/ARN from
 	// region, account_id, env, and context, e.g.
 	// "arn:aws:eks:{region}:{account_id}:cluster/tf-{env}-{context}-1".
@@ -126,6 +133,23 @@ func (c Config) ResolveSecretName(namespace, env string) string {
 // naming conventions usually differ.
 func (c Config) ResolveK8sSecretName(namespace string) string {
 	template := c.K8sSecretNameTemplate
+	if template == "" {
+		template = c.SecretNameTemplate
+	}
+	return kctl.ResolveTemplate(template, map[string]string{
+		"namespace": namespace,
+	})
+}
+
+// ResolveExternalSecretName builds the ExternalSecret CRD object name for
+// a given namespace using ExternalSecretNameTemplate. Falls back to
+// K8sSecretNameTemplate (or SecretNameTemplate if that is also empty) so
+// that existing configs keep working without changes.
+func (c Config) ResolveExternalSecretName(namespace string) string {
+	template := c.ExternalSecretNameTemplate
+	if template == "" {
+		template = c.K8sSecretNameTemplate
+	}
 	if template == "" {
 		template = c.SecretNameTemplate
 	}

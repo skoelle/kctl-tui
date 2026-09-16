@@ -49,8 +49,9 @@ type panelModel struct {
 
 	deploymentName string
 
-	awsSecretName string // resolved via secret_name_template (namespace + env)
-	k8sSecretName string // resolved via k8s_secret_name_template (namespace only)
+	awsSecretName       string // resolved via secret_name_template (namespace + env)
+	k8sSecretName       string // resolved via k8s_secret_name_template (namespace only)
+	externalSecretName  string // resolved via external_secret_name_template (namespace only)
 	awsValues     map[string]string
 	k8sValues     map[string]string
 	diffEntries   []kctl.SecretDiffEntry
@@ -316,6 +317,7 @@ func (m *panelModel) afterAWSLogin(execErr error) (tea.Model, tea.Cmd) {
 func (m *panelModel) startSecretsFlow() (tea.Model, tea.Cmd) {
 	m.awsSecretName = m.cfg.ResolveSecretName(m.ns, m.currentEnv)
 	m.k8sSecretName = m.cfg.ResolveK8sSecretName(m.ns)
+	m.externalSecretName = m.cfg.ResolveExternalSecretName(m.ns)
 
 	raw, err := kubeexec.GetAWSSecretString(m.awsSecretName, m.cfg.AWSRegion)
 	if err != nil {
@@ -462,7 +464,7 @@ func (m *panelModel) fromForceSyncConfirm() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.step = stepExternalSecretName
-	m.input.SetValue(m.k8sSecretName)
+	m.input.SetValue(m.externalSecretName)
 	m.input.Placeholder = "ExternalSecret object name"
 	return m, nil
 }

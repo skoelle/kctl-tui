@@ -42,6 +42,14 @@ secret_name_template: "tf-{namespace}-{env}-secrets"
 # Available placeholders: {namespace}.
 k8s_secret_name_template: "{namespace}-common-secrets"
 
+# Builds the ExternalSecret CRD object name to annotate when a force-sync
+# is requested. This is often different from the Kubernetes secret name
+# because the ExternalSecret CRD and the resulting Secret are separate
+# objects (e.g. ExternalSecret "job-apply" produces Secret
+# "job-apply-common-secrets"). Falls back to k8s_secret_name_template
+# if omitted. Available placeholders: {namespace}.
+external_secret_name_template: "{namespace}"
+
 # Builds the actual kubectl context name/ARN from region, account ID, env,
 # and context. Available placeholders: {region}, {account_id}, {env},
 # {context}. Adjust the literal parts ("tf-", "-1", cluster naming, ARN

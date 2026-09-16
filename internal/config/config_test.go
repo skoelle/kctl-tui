@@ -112,6 +112,33 @@ func TestResolveK8sSecretName_FallsBackToSecretNameTemplate(t *testing.T) {
 	}
 }
 
+func TestResolveExternalSecretName_ExplicitTemplate(t *testing.T) {
+	cfg := Config{ExternalSecretNameTemplate: "{namespace}"}
+	got := cfg.ResolveExternalSecretName("job-apply")
+	want := "job-apply"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveExternalSecretName_FallsBackToK8sSecretNameTemplate(t *testing.T) {
+	cfg := Config{K8sSecretNameTemplate: "{namespace}-common-secrets"}
+	got := cfg.ResolveExternalSecretName("job-apply")
+	want := "job-apply-common-secrets"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolveExternalSecretName_FallsBackToSecretNameTemplate(t *testing.T) {
+	cfg := Config{SecretNameTemplate: "tf-{namespace}-{env}-secrets"}
+	got := cfg.ResolveExternalSecretName("job-apply")
+	want := "tf-job-apply-{env}-secrets" // {env} intentionally left unresolved
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestLoginCommand_DefaultsWhenUnset(t *testing.T) {
 	cfg := Config{}
 	if got := cfg.LoginCommand(); got != DefaultAWSSSOLoginCommand {

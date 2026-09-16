@@ -83,14 +83,15 @@ func runUpdate(verbose bool) error {
 }
 
 // checkForUpdateInteractive checks for a new version and prompts the user to update.
-// Returns true if an update was applied.
-func checkForUpdateInteractive(verbose bool) bool {
+// Returns (true, nil) if an update was applied successfully, (false, nil) if no
+// update was needed or the user declined, and (false, err) if the update failed.
+func checkForUpdateInteractive(verbose bool) (bool, error) {
 	if version == "dev" {
-		return false
+		return false, nil
 	}
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return false
+		return false, nil
 	}
 
 	updater, err := initUpdater(verbose)
@@ -98,7 +99,7 @@ func checkForUpdateInteractive(verbose bool) bool {
 		if verbose {
 			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
 		}
-		return false
+		return false, nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), updateTimeout)
@@ -110,10 +111,10 @@ func checkForUpdateInteractive(verbose bool) bool {
 		if verbose {
 			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
 		}
-		return false
+		return false, nil
 	}
 	if !found {
-		return false
+		return false, nil
 	}
 
 	current, _ := semver.NewVersion(version)
@@ -121,7 +122,7 @@ func checkForUpdateInteractive(verbose bool) bool {
 	newVer, _ := semver.NewVersion(newVersion)
 
 	if current != nil && !current.LessThan(newVer) {
-		return false
+		return false, nil
 	}
 
 	fmt.Printf("New version %s available (current: %s). Update now? [y/N] ", newVersion, version)
@@ -131,17 +132,16 @@ func checkForUpdateInteractive(verbose bool) bool {
 	answer = strings.TrimSpace(strings.ToLower(answer))
 
 	if answer != "y" && answer != "yes" {
-		return false
+		return false, nil
 	}
 
 	fmt.Println("Updating...")
 	if err := updater.UpdateTo(ctx, rel, ""); err != nil {
-		fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
-		return false
+		return false, fmt.Errorf("update failed: %w", err)
 	}
 
 	fmt.Printf("Updated to %s. Please restart kctl-tui.\n", newVersion)
-	return true
+	return true, nil
 }
 
 type verboseLogger struct{}

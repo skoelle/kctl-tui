@@ -337,6 +337,8 @@ func (m *fullModel) startTmuxSessionTmux() tea.Cmd {
 // split-pane feature. This avoids the psmux focus-freeze issue on Windows.
 // Note: In Windows Terminal, -H (horizontal) stacks panes top/bottom,
 // while -V (vertical) places them side by side — opposite of tmux.
+// The -s flag controls the split ratio: first split gives k9sA 75%
+// (panel keeps 25%), second split divides k9sA equally (37.5% each).
 func (m *fullModel) startWtSession() tea.Cmd {
 	selfPath, err := os.Executable()
 	if err != nil {
@@ -353,14 +355,14 @@ func (m *fullModel) startWtSession() tea.Cmd {
 	kubeexec.VerboseLog("[debug] panelCmd=%s\n", panelCmd)
 	kubeexec.VerboseLog("[debug] k9sCmdA=%s\n", k9sCmdA)
 
-	wtCmd := fmt.Sprintf("wt new-tab %s ; split-pane -H %s", panelCmd, k9sCmdA)
+	wtCmd := fmt.Sprintf("wt new-tab %s ; split-pane -H -s 0.75 %s", panelCmd, k9sCmdA)
 
 	if len(m.cfg.Envs) > 1 {
 		envB := m.cfg.Envs[1]
 		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
 		k9sCmdB := fmt.Sprintf("k9s --context %s --namespace %s --command pods", ctxB, m.selectedNamespace)
 		kubeexec.VerboseLog("[debug] k9sCmdB=%s\n", k9sCmdB)
-		wtCmd += fmt.Sprintf(" ; split-pane -H %s", k9sCmdB)
+		wtCmd += fmt.Sprintf(" ; split-pane -H -s 0.5 %s", k9sCmdB)
 	}
 
 	c := exec.Command("cmd", "/c", wtCmd)

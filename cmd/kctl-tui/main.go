@@ -94,7 +94,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "WARNING: failed to load config: %v\n", cfgErr)
 		}
 		if cfgErr == nil && cfg.IsAutoUpdateCheckEnabled() {
-			if checkForUpdateInteractive(verbose) {
+			updated, err := checkForUpdateInteractive(verbose)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			if updated {
 				os.Exit(0)
 			}
 		}

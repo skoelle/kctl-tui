@@ -335,6 +335,8 @@ func (m *fullModel) startTmuxSessionTmux() tea.Cmd {
 
 // startWtSession creates the session using Windows Terminal's native
 // split-pane feature. This avoids the psmux focus-freeze issue on Windows.
+// Note: In Windows Terminal, -H (horizontal) stacks panes top/bottom,
+// while -V (vertical) places them side by side — opposite of tmux.
 func (m *fullModel) startWtSession() tea.Cmd {
 	selfPath, err := os.Executable()
 	if err != nil {
@@ -351,20 +353,19 @@ func (m *fullModel) startWtSession() tea.Cmd {
 	kubeexec.VerboseLog("[debug] panelCmd=%s\n", panelCmd)
 	kubeexec.VerboseLog("[debug] k9sCmdA=%s\n", k9sCmdA)
 
-	args := []string{"new-tab", panelCmd, ";", "split-pane", "-V", k9sCmdA}
+	wtCmd := fmt.Sprintf("wt new-tab %s ; split-pane -H %s", panelCmd, k9sCmdA)
 
 	if len(m.cfg.Envs) > 1 {
 		envB := m.cfg.Envs[1]
 		ctxB := m.cfg.ResolveContext(envB, m.selectedContext)
 		k9sCmdB := fmt.Sprintf("k9s --context %s --namespace %s --command pods", ctxB, m.selectedNamespace)
 		kubeexec.VerboseLog("[debug] k9sCmdB=%s\n", k9sCmdB)
-		args = append(args, ";", "split-pane", "-V", k9sCmdB)
+		wtCmd += fmt.Sprintf(" ; split-pane -H %s", k9sCmdB)
 	}
 
-	c := exec.Command("wt", args...)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return tmuxDoneMsg{err: err}
-	})
+	c := exec.Command("cmd", "/c", wtCmd)
+	_ = c.Start()
+	return nil
 }
 
 func (m *fullModel) View() string {

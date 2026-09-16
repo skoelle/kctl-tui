@@ -107,7 +107,7 @@ go build -o kctl-tui ./cmd/kctl-tui
 sudo mv kctl-tui /usr/local/bin/
 ```
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ### 📦 Prebuilt binaries
 
@@ -203,10 +203,15 @@ kctl-tui                    # start the TUI (full navigation mode)
 kctl-tui --help             # show all commands and flags
 kctl-tui --version          # print version
 kctl-tui --verbose          # enable debug logging to stderr
+kctl-tui update             # update to the latest release
 kctl-tui doctor             # check if all tools, config and connections are OK
 kctl-tui config check       # validate ~/.kctl-tui/config.yaml
 kctl-tui panel --context=... --ns=... --team=...   # internal (called by tmux)
 ```
+
+When starting `kctl-tui` without a subcommand, a background check queries
+GitHub Releases for a newer version. If one is found, you are prompted to
+update interactively before the TUI starts.
 
 ## 🛠️ Development
 

@@ -70,10 +70,30 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "update":
+			if err := runUpdate(verbose); err != nil {
+				fmt.Fprintln(os.Stderr, "kctl-tui update error:", err)
+				os.Exit(1)
+			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", filtered[0])
 			printUsage()
 			os.Exit(1)
+		}
+	}
+
+	// Load config early to check auto_update_update and validate.
+	cfgPath, err := config.DefaultPath()
+	if err == nil {
+		cfg, cfgErr := config.Load(cfgPath)
+		if cfgErr != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: failed to load config: %v\n", cfgErr)
+		}
+		if cfgErr == nil && cfg.IsAutoUpdateCheckEnabled() {
+			if checkForUpdateInteractive(verbose) {
+				os.Exit(0)
+			}
 		}
 	}
 
@@ -92,6 +112,7 @@ https://github.com/skoelle/kctl-tui
 Usage:
   kctl-tui [flags]             start the TUI (full navigation mode)
   kctl-tui doctor              check tools, config and connections
+  kctl-tui update              update to the latest release
   kctl-tui config check        validate ~/.kctl-tui/config.yaml
   kctl-tui panel [options]     control pane (called internally by tmux)
 
@@ -103,6 +124,7 @@ Flags:
 Examples:
   kctl-tui                          # start the TUI
   kctl-tui doctor                   # verify everything is installed
+  kctl-tui update                   # update to the latest version
   kctl-tui --verbose 2>debug.log    # log commands to a file
   kctl-tui config check             # validate config
 `)

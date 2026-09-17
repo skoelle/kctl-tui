@@ -95,7 +95,8 @@ func newPanelModel(context, ns, team string) *panelModel {
 
 	m := &panelModel{context: context, ns: ns, team: team, cfg: cfg, step: stepEnvMenu, list: l, input: ti}
 	if m.isWtMode() {
-		l.KeyMap.Quit.SetEnabled(false) // "q" deaktivieren, "ctrl+c" bleibt
+		l.DisableQuitKeybindings()
+		l.SetShowHelp(false)
 	}
 	if loadErr != nil {
 		m.err = fmt.Errorf("config load failed: %w", loadErr)

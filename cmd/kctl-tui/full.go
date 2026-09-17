@@ -355,7 +355,7 @@ func (m *fullModel) startWtSession() tea.Cmd {
 	kubeexec.VerboseLog("[debug] panelCmd=%s\n", panelCmd)
 	kubeexec.VerboseLog("[debug] k9sCmdA=%s\n", k9sCmdA)
 
-	wtCmd := fmt.Sprintf("wt -F new-tab %s ; split-pane -H -s 0.75 %s", panelCmd, k9sCmdA)
+	wtCmd := fmt.Sprintf("wt -M new-tab %s ; split-pane -H -s 0.75 %s", panelCmd, k9sCmdA)
 
 	if len(m.cfg.Envs) > 1 {
 		envB := m.cfg.Envs[1]

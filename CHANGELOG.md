@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   from GitHub and replaces the running binary
 - Automatic update check on startup — prompts to update interactively when
   a newer version is available
+- "Copy secret field to clipboard" action in the control-pane menu —
+  copies a single Kubernetes secret field via OSC52 (with native clipboard
+  fallback)
 
 ## [0.2.0] - 2026-08-09
 

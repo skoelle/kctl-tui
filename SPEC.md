@@ -23,7 +23,7 @@ multiplexer.
 | Deployment | Controls the pods of a service; its name does not have to match the namespace name |
 | Pod | Running instance, automatically generated name, not needed manually for the restart workflow |
 | Rollout Restart | Rolling restart of all pods of a deployment according to the RollingUpdate strategy — **not** a simultaneous hard-kill of all pods, except with 1 replica or the `Recreate` strategy |
-| Control pane | The top tmux pane running the Go tool itself (menu for redeploy/secrets) |
+| Control pane | The top tmux pane running the Go tool itself (menu for redeploy/secrets/copy) |
 | Status panes | The two lower tmux panes, each running a `k9s` instance |
 | Team label | Any freely configurable namespace label used to group namespaces by team/ownership (key and values are project-specific, kept generic here) |
 
@@ -74,7 +74,7 @@ Once start navigation is complete, the tool opens a tmux session with
 +--------------------------------------------------+
 |  Pane 0 (top): Control pane                      |
 |  -> runs the kctl-tui binary in "panel" mode      |
-|  -> menu: Redeploy, secrets diff                  |
+|  -> menu: Redeploy, secrets diff, copy field    |
 +--------------------------------------------------+
 |  Pane 1 (middle): k9s --context <context-a> --namespace <ns> --command pods|
 +--------------------------------------------------+
@@ -85,7 +85,8 @@ Once start navigation is complete, the tool opens a tmux session with
 Important: a separate "status" menu item in the control pane is not
 needed — status is continuously visible via the two k9s panes for as long
 as the session runs. The control pane only contains the actions k9s does
-not cover: **redeploy** and **secrets diff**.
+not cover: **redeploy**, **secrets diff**, and **copying a secret field**
+to the clipboard.
 
 Example startup command (generic placeholders):
 
@@ -136,7 +137,22 @@ Switching between panes: `Ctrl-b` + arrow key, or `Ctrl-b` `o`.
 The ExternalSecret object name for the force-sync annotation is the only
 value asked for interactively at runtime.
 
-### 3.6 Context resolution via templates
+### 3.6 Copy a secret field to the clipboard — in the control pane
+
+1. Resolve the Kubernetes secret name from `k8s_secret_name_template`
+   (using namespace). No AWS session is required — the value comes straight
+   from the cluster.
+2. Fetch all fields of the Kubernetes secret and base64-decode them:
+   `kubectl -n <ns> get secret <secret-name> -o json`.
+3. Show the fields alphabetically sorted for selection; binary values are
+   labelled with their byte size.
+4. Copy the selected field's value to the clipboard. OSC52 is used first so
+   the value reaches the clipboard through tmux/SSH sessions; if the escape
+   sequence cannot be written, the native clipboard tooling
+   (pbcopy/xclip/wl-copy/clip) is used as a fallback. A short hint is shown
+   when running under tmux, in case `set -g set-clipboard on` is missing.
+
+### 3.7 Context resolution via templates
 
 The actual kubectl context name/ARN for each environment is computed from
 a configurable template at startup. The two k9s status panes and all

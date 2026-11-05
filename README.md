@@ -20,7 +20,8 @@ with plain `kubectl`/`k9s`. kctl-tui adds:
   panes running `k9s` for the current namespace across your two
   configured environments (e.g. beta/prod), shown side by side.
 - 📋 A control-pane menu organized **by environment**: pick beta or prod,
-  then Secrets sync or Redeploy for that environment specifically.
+  then Secrets sync, copy a secret field to the clipboard, or Redeploy for
+  that environment specifically.
 - 🔐 AWS Secrets Manager secret IDs and Kubernetes context names/ARNs are
   **computed from configurable templates** (namespace + environment),
   instead of listing secrets or discovering contexts live from
@@ -40,7 +41,7 @@ See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
 +--------------------------------------------------+
 |  Control pane: kctl-tui panel                    |
 |  -> 1) Quit  2) beta  3) prod                     |
-|     each with: a) Secrets sync  b) Redeploy       |
+|     each with: a) Secrets sync  b) Copy field  c) Redeploy   |
 +--------------------------------------------------+
 |  k9s --context <resolved beta context> --namespace <ns> --command pods   |
 +--------------------------------------------------+
@@ -56,8 +57,8 @@ See [SPEC.md](SPEC.md) for the full requirements and design rationale, and
    this binary in "panel" mode, the two status panes run `k9s` against
    your first two configured environments (e.g. beta and prod), resolved
    from `context_template`.
-4. In the control pane, pick an environment, then Secrets sync or
-   Redeploy for that environment. `Esc` goes back one level (action menu
+4. In the control pane, pick an environment, then Secrets sync, Copy field
+   or Redeploy for that environment. `Esc` goes back one level (action menu
    -> environment menu -> closes the whole tmux session, including both
    `k9s` panes, and returns you to namespace selection).
 

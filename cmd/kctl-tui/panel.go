@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ const (
 	stepDiffResult
 	stepForceSyncConfirm
 	stepExternalSecretName
+	stepCopyField
 	stepDone
 	stepError
 )
@@ -50,16 +52,17 @@ type panelModel struct {
 
 	deploymentName string
 
-	awsSecretName       string // resolved via secret_name_template (namespace + env)
-	k8sSecretName       string // resolved via k8s_secret_name_template (namespace only)
-	externalSecretName  string // resolved via external_secret_name_template (namespace only)
-	awsValues     map[string]string
-	k8sValues     map[string]string
-	diffEntries   []kctl.SecretDiffEntry
-	diffOffset    int // scroll position for diff table
+	awsSecretName      string // resolved via secret_name_template (namespace + env)
+	k8sSecretName      string // resolved via k8s_secret_name_template (namespace only)
+	externalSecretName string // resolved via external_secret_name_template (namespace only)
+	copySecretName     string // Kubernetes secret used by the copy-to-clipboard flow
+	awsValues          map[string]string
+	k8sValues          map[string]string
+	diffEntries        []kctl.SecretDiffEntry
+	diffOffset         int // scroll position for diff table
 
 	message string
-	err      error
+	err     error
 }
 
 // isWtMode returns true when running on Windows with multiplexer: "wt".
@@ -126,6 +129,7 @@ func (m *panelModel) showEnvMenu() {
 func (m *panelModel) showActionMenu() {
 	m.list.SetItems([]list.Item{
 		simpleItem{label: "Secrets sync (AWS <-> Kubernetes)", value: "secrets"},
+		simpleItem{label: "Copy secret field to clipboard", value: "copy"},
 		simpleItem{label: "Redeploy (rollout restart)", value: "redeploy"},
 	})
 	m.list.Title = fmt.Sprintf("kctl-tui panel  [context=%s ns=%s team=%s env=%s]  (esc = back)",
@@ -153,6 +157,15 @@ func (m *panelModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case awsLoginDoneMsg:
 		return m.afterAWSLogin(msg.err)
+
+	case clipboardDoneMsg:
+		if msg.err != nil {
+			return m.showError(msg.err)
+		}
+		if msg.hint != "" && m.step == stepDone {
+			m.message += " " + msg.hint
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -226,6 +239,8 @@ func (m *panelModel) handleEnter() (tea.Model, tea.Cmd) {
 		return m.fromForceSyncConfirm()
 	case stepExternalSecretName:
 		return m.doForceSync()
+	case stepCopyField:
+		return m.fromCopyField()
 	case stepDiffResult, stepDone, stepError:
 		m.showActionMenu()
 		return m, nil
@@ -275,8 +290,58 @@ func (m *panelModel) fromActionMenu() (tea.Model, tea.Cmd) {
 		m.step = stepRedeployList
 	case "secrets":
 		return m.checkAWSAuthAndProceed()
+	case "copy":
+		return m.startCopyFlow()
 	}
 	return m, nil
+}
+
+// startCopyFlow fetches the Kubernetes secret fields for the current
+// namespace and shows them as a sorted pick list. Selecting a field copies
+// its value to the clipboard; an AWS session is not required.
+func (m *panelModel) startCopyFlow() (tea.Model, tea.Cmd) {
+	m.copySecretName = m.cfg.ResolveK8sSecretName(m.ns)
+	values, err := kubeexec.GetSecretAllFields(m.resolvedContext(), m.ns, m.copySecretName)
+	if err != nil {
+		return m.showError(fmt.Errorf("failed to fetch Kubernetes secret %q: %w", m.copySecretName, err))
+	}
+	m.k8sValues = values
+
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	items := make([]list.Item, 0, len(keys))
+	for _, k := range keys {
+		label := k
+		if kctl.IsBinary(values[k]) {
+			label = fmt.Sprintf("%s <binary %d bytes>", k, len(values[k]))
+		}
+		items = append(items, simpleItem{label: label, value: k})
+	}
+	m.list.SetItems(items)
+	m.list.Title = fmt.Sprintf("Select field to copy [env=%s secret=%s]  (esc = back)",
+		m.currentEnv, m.copySecretName)
+	m.step = stepCopyField
+	m.message = ""
+	m.err = nil
+	return m, nil
+}
+
+func (m *panelModel) fromCopyField() (tea.Model, tea.Cmd) {
+	item, ok := m.list.SelectedItem().(simpleItem)
+	if !ok {
+		return m, nil
+	}
+	value, ok := m.k8sValues[item.value]
+	if !ok {
+		return m.showError(fmt.Errorf("field %q is no longer available", item.value))
+	}
+	m.message = fmt.Sprintf("Copied field %q from %s to clipboard.", item.value, m.copySecretName)
+	m.step = stepDone
+	return m, copyToClipboard(value)
 }
 
 // checkAWSAuthAndProceed verifies the current AWS credentials/SSO session
@@ -507,7 +572,7 @@ func (m *panelModel) doForceSync() (tea.Model, tea.Cmd) {
 
 func (m *panelModel) View() string {
 	switch m.step {
-	case stepEnvMenu, stepActionMenu, stepRedeployList, stepRedeployConfirm:
+	case stepEnvMenu, stepActionMenu, stepRedeployList, stepRedeployConfirm, stepCopyField:
 		v := m.list.View()
 		if m.err != nil {
 			v += "\nerror: " + m.err.Error()

@@ -47,6 +47,9 @@ is still open. For the full requirements, see [SPEC.md](SPEC.md).
         in one table (key / AWS value / Kubernetes value / match status).
         If any field differs, offer a single force-sync request for the
         **whole secret** (one ExternalSecret annotation).
+      - Copy field: pick a Kubernetes secret field from an alphabetical
+        list and copy its value to the clipboard (OSC52 with native
+        fallback).
       - `Esc` closes the whole tmux session (`tmux kill-session`).
 
 ## Phase 2 — Hardening (done)
